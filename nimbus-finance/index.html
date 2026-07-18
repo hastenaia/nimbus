@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<meta name="theme-color" content="#0B0D12" />
+<title>Nimbus Finance</title>
+<link rel="stylesheet" href="./css/main.css" />
+</head>
+<body>
+
+<!-- ============ AUTH SCREEN ============ -->
+<div id="auth-screen" class="auth-shell">
+  <div class="card auth-card">
+    <div class="brand" style="padding-left:0;"><span class="brand-mark"></span> Nimbus Finance</div>
+
+    <div id="auth-tabs" style="display:flex;gap:6px;margin-bottom:18px;">
+      <button class="btn btn-ghost btn-sm" data-auth-tab="login">Sign in</button>
+      <button class="btn btn-ghost btn-sm" data-auth-tab="signup">Create account</button>
+      <button class="btn btn-ghost btn-sm" data-auth-tab="forgot">Forgot?</button>
+    </div>
+
+    <form id="login-form" class="auth-panel">
+      <div class="field"><label>Email</label><input type="email" id="login-email" required /></div>
+      <div class="field"><label>Password</label><input type="password" id="login-password" required /></div>
+      <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+    </form>
+
+    <form id="signup-form" class="auth-panel hidden">
+      <div class="field"><label>Full name</label><input type="text" id="signup-name" required /></div>
+      <div class="field"><label>Email</label><input type="email" id="signup-email" required /></div>
+      <div class="field"><label>Password</label><input type="password" id="signup-password" minlength="6" required /></div>
+      <button class="btn btn-primary btn-block" type="submit">Create account</button>
+    </form>
+
+    <form id="forgot-form" class="auth-panel hidden">
+      <div class="field"><label>Email</label><input type="email" id="forgot-email" required /></div>
+      <button class="btn btn-primary btn-block" type="submit">Send reset link</button>
+    </form>
+
+    <div style="text-align:center;margin:14px 0;color:var(--text-faint);font-size:12px;">or</div>
+    <button id="google-signin-btn" class="btn btn-ghost btn-block">Continue with Google</button>
+  </div>
+</div>
+
+<!-- ============ MAIN APP ============ -->
+<div id="app" class="hidden">
+  <div class="sidebar">
+    <div class="brand"><span class="brand-mark"></span> Nimbus</div>
+    <button class="nav-item active" data-route="dashboard"><span class="ico">🏠</span> Dashboard</button>
+    <button class="nav-item" data-route="transactions"><span class="ico">🧾</span> Transactions</button>
+    <button class="nav-item" data-route="budgets"><span class="ico">🎯</span> Budgets</button>
+    <button class="nav-item" data-route="goals"><span class="ico">🏆</span> Savings Goals</button>
+    <button class="nav-item" data-route="networth"><span class="ico">📊</span> Net Worth</button>
+    <button class="nav-item" data-route="reports"><span class="ico">📑</span> Reports</button>
+    <button class="nav-item" data-route="settings"><span class="ico">⚙️</span> Settings</button>
+    <div style="flex:1;"></div>
+    <button class="nav-item" id="logout-btn"><span class="ico">↩️</span> Sign out</button>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="greeting display">Hi, <span id="user-greeting-name">there</span> 👋</div>
+        <div class="sub">Here's how your money is doing.</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="icon-btn" id="theme-toggle-btn">🌗</button>
+        <button class="icon-btn" data-open-modal="modal-ocr">📷</button>
+      </div>
+    </div>
+
+    <!-- ---------------- DASHBOARD ---------------- -->
+    <section class="page active" id="page-dashboard">
+      <div class="grid grid-stats">
+        <div class="card"><div class="card-title">Current Balance</div><div class="stat-value mono" id="stat-balance">₱0.00</div></div>
+        <div class="card"><div class="card-title">Monthly Income</div><div class="stat-value mono" id="stat-income">₱0.00</div></div>
+        <div class="card"><div class="card-title">Monthly Expenses</div><div class="stat-value mono" id="stat-expenses">₱0.00</div></div>
+        <div class="card"><div class="card-title">Monthly Savings</div><div class="stat-value mono" id="stat-savings">₱0.00</div></div>
+        <div class="card"><div class="card-title">Savings Rate</div><div class="stat-value mono" id="stat-savings-rate">0%</div></div>
+        <div class="card"><div class="card-title">Largest Expense</div><div class="stat-value mono" id="stat-largest-expense">—</div></div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:16px;">
+        <div class="card">
+          <div class="card-title">Financial Health Score</div>
+          <div class="rings-wrap">
+            <svg id="health-rings-svg" width="130" height="130"></svg>
+            <div>
+              <div class="health-score-big"><span id="health-score-value">0</span><span style="font-size:16px;color:var(--text-faint);">/100</span></div>
+              <div class="rings-legend">
+                <span><span class="dot" style="background:var(--growth)"></span>Savings rate</span>
+                <span><span class="dot" style="background:var(--signal)"></span>Budget adherence</span>
+                <span><span class="dot" style="background:var(--gold)"></span>Goal progress</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card quote-card">
+          <div class="card-title">Quote of the Day</div>
+          <div class="quote-text quote-fade" id="quote-text">Loading…</div>
+          <div class="quote-author" id="quote-author"></div>
+          <div style="display:flex;gap:8px;margin-top:14px;">
+            <button class="btn btn-ghost btn-sm" id="quote-refresh-btn">New quote</button>
+            <button class="icon-btn" id="quote-fav-btn">☆</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:16px;">
+        <div class="card">
+          <div class="card-title">AI Financial Coach</div>
+          <div id="coach-card-body"></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Income vs Expense</div>
+          <div style="height:180px;"><canvas id="chart-income-expense"></canvas></div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:16px;">
+        <div class="card">
+          <div class="card-title">Spending by Category</div>
+          <div style="height:200px;"><canvas id="chart-category-pie"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Savings Growth</div>
+          <div style="height:200px;"><canvas id="chart-savings-growth"></canvas></div>
+        </div>
+      </div>
+
+      <div class="section-head"><h3>Recent Transactions</h3><button class="link-btn" data-route="transactions">See all</button></div>
+      <div class="card" id="recent-tx-list"></div>
+    </section>
+
+    <!-- ---------------- TRANSACTIONS ---------------- -->
+    <section class="page" id="page-transactions">
+      <div class="section-head"><h3>All Transactions</h3><button class="btn btn-primary btn-sm" data-open-modal="modal-tx">+ Add</button></div>
+      <div class="card" style="margin-bottom:14px;">
+        <div class="field-row">
+          <div class="field"><label>Search</label><input type="text" id="tx-search-input" placeholder="Amount, description, notes…" /></div>
+          <div class="field"><label>Type</label>
+            <select id="tx-filter-type"><option value="all">All</option><option value="income">Income</option><option value="expense">Expense</option></select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Category</label><select id="tx-filter-category" class="category-select"><option value="all">All</option></select></div>
+          <div class="field"><label>Payment Method</label>
+            <select id="tx-filter-method">
+              <option value="all">All</option><option value="cash">Cash</option><option value="gcash">GCash</option>
+              <option value="bank">Bank</option><option value="credit_card">Credit Card</option><option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="tx-full-list"></div>
+
+      <div class="section-head"><h3>Import / Export</h3></div>
+      <div class="card" style="display:flex;flex-wrap:wrap;gap:10px;">
+        <button class="btn btn-ghost btn-sm" id="export-csv-btn">Export CSV</button>
+        <button class="btn btn-ghost btn-sm" id="export-excel-btn">Export Excel</button>
+        <button class="btn btn-ghost btn-sm" id="export-json-btn">Export JSON</button>
+        <label class="btn btn-ghost btn-sm" style="margin:0;">
+          Import file <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls,.json" class="hidden" />
+        </label>
+      </div>
+    </section>
+
+    <!-- ---------------- BUDGETS ---------------- -->
+    <section class="page" id="page-budgets">
+      <div class="section-head"><h3>Monthly Budgets</h3><button class="btn btn-primary btn-sm" data-open-modal="modal-budget">+ Set Budget</button></div>
+      <div class="card" id="budget-list"></div>
+      <div class="section-head"><h3>Budget Breakdown</h3></div>
+      <div class="card"><div style="height:220px;"><canvas id="chart-budget-breakdown"></canvas></div></div>
+    </section>
+
+    <!-- ---------------- GOALS ---------------- -->
+    <section class="page" id="page-goals">
+      <div class="section-head"><h3>Savings Goals</h3><button class="btn btn-primary btn-sm" data-open-modal="modal-goal">+ New Goal</button></div>
+      <div id="goals-list"></div>
+    </section>
+
+    <!-- ---------------- NET WORTH ---------------- -->
+    <section class="page" id="page-networth">
+      <div class="grid grid-stats">
+        <div class="card"><div class="card-title">Assets</div><div class="stat-value mono" id="networth-assets">₱0.00</div></div>
+        <div class="card"><div class="card-title">Liabilities</div><div class="stat-value mono" id="networth-liabilities">₱0.00</div></div>
+        <div class="card"><div class="card-title">Net Worth</div><div class="stat-value mono" id="networth-total">₱0.00</div></div>
+      </div>
+      <div class="grid grid-2" style="margin-top:16px;">
+        <div class="card"><div class="card-title">Growth Timeline</div><div style="height:200px;"><canvas id="chart-growth-timeline"></canvas></div></div>
+        <div class="card"><div class="card-title">Cash Flow</div><div style="height:200px;"><canvas id="chart-cash-flow"></canvas></div></div>
+      </div>
+      <div class="section-head"><h3>Assets & Liabilities</h3><button class="btn btn-primary btn-sm" data-open-modal="modal-networth">+ Add Entry</button></div>
+      <div class="card" id="networth-list"></div>
+    </section>
+
+    <!-- ---------------- REPORTS ---------------- -->
+    <section class="page" id="page-reports">
+      <div class="section-head"><h3>Reports</h3></div>
+      <div class="card" id="reports-body"></div>
+    </section>
+
+    <!-- ---------------- SETTINGS ---------------- -->
+    <section class="page" id="page-settings">
+      <div class="section-head"><h3>Settings</h3></div>
+      <div class="card">
+        <p style="color:var(--text-dim);font-size:13.5px;">Theme, currency, and category management. Manage default categories, add custom ones, and control notification preferences here.</p>
+      </div>
+    </section>
+  </div>
+
+  <!-- Mobile tab bar -->
+  <div class="tabbar">
+    <button class="tab active" data-route="dashboard"><span class="ico">🏠</span>Home</button>
+    <button class="tab" data-route="transactions"><span class="ico">🧾</span>Activity</button>
+    <button class="tab" data-route="budgets"><span class="ico">🎯</span>Budgets</button>
+    <button class="tab" data-route="goals"><span class="ico">🏆</span>Goals</button>
+    <button class="tab" data-route="networth"><span class="ico">📊</span>Worth</button>
+  </div>
+  <button class="fab" data-open-modal="modal-tx">+</button>
+</div>
+
+<div id="toast-stack"></div>
+
+<!-- ============ MODALS ============ -->
+<div class="modal-backdrop" id="modal-tx">
+  <div class="modal">
+    <div class="modal-head"><h3>Add Transaction</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <form id="tx-form">
+      <div class="field-row">
+        <div class="field"><label>Type</label><select name="type" required><option value="expense">Expense</option><option value="income">Income</option></select></div>
+        <div class="field"><label>Amount</label><input type="number" step="0.01" name="amount" required /></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Category</label><select name="category_id" class="category-select"></select></div>
+        <div class="field"><label>Payment Method</label>
+          <select name="payment_method">
+            <option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank">Bank</option>
+            <option value="credit_card">Credit Card</option><option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Description</label><input type="text" name="description" /></div>
+      <div class="field-row">
+        <div class="field"><label>Date</label><input type="date" name="occurred_on" required /></div>
+        <div class="field"><label>Recurring?</label><input type="checkbox" name="is_recurring" style="width:auto;margin-top:10px;" /></div>
+      </div>
+      <div class="field"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <button class="btn btn-primary btn-block" type="submit">Save Transaction</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-budget">
+  <div class="modal">
+    <div class="modal-head"><h3>Set Monthly Budget</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <form id="budget-form">
+      <div class="field"><label>Category</label><select name="category_id" class="category-select" data-filter-type="expense" required></select></div>
+      <div class="field"><label>Monthly Amount</label><input type="number" step="0.01" name="amount" required /></div>
+      <button class="btn btn-primary btn-block" type="submit">Save Budget</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-goal">
+  <div class="modal">
+    <div class="modal-head"><h3>New Savings Goal</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <form id="goal-form">
+      <div class="field"><label>Goal name</label><input type="text" name="name" required /></div>
+      <div class="field-row">
+        <div class="field"><label>Target amount</label><input type="number" step="0.01" name="target_amount" required /></div>
+        <div class="field"><label>Starting amount</label><input type="number" step="0.01" name="current_amount" value="0" /></div>
+      </div>
+      <div class="field"><label>Deadline (optional)</label><input type="date" name="deadline" /></div>
+      <div class="field"><label>Icon (emoji)</label><input type="text" name="icon" value="🎯" maxlength="2" /></div>
+      <button class="btn btn-primary btn-block" type="submit">Create Goal</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-networth">
+  <div class="modal">
+    <div class="modal-head"><h3>Add Asset / Liability</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <form id="networth-form">
+      <div class="field"><label>Kind</label><select name="kind"><option value="asset">Asset</option><option value="liability">Liability</option></select></div>
+      <div class="field"><label>Name</label><input type="text" name="name" placeholder="e.g. Savings account, Car loan" required /></div>
+      <div class="field"><label>Value</label><input type="number" step="0.01" name="value" required /></div>
+      <button class="btn btn-primary btn-block" type="submit">Save</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-ocr">
+  <div class="modal">
+    <div class="modal-head"><h3>Scan GCash Receipt</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <div class="field"><label>Upload screenshot</label><input type="file" id="ocr-file-input" accept="image/*" /></div>
+    <div id="ocr-progress" style="font-size:13px;color:var(--text-dim);margin:10px 0;"></div>
+    <div id="ocr-confirm-section" class="hidden">
+      <form id="ocr-confirm-form">
+        <div class="field-row">
+          <div class="field"><label>Type</label><select id="ocr-type" name="type"><option value="expense">Expense</option><option value="income">Income</option></select></div>
+          <div class="field"><label>Amount</label><input type="number" step="0.01" id="ocr-amount" name="amount" required /></div>
+        </div>
+        <div class="field"><label>Merchant / Recipient</label><input type="text" id="ocr-merchant" name="merchant" /></div>
+        <div class="field-row">
+          <div class="field"><label>Date</label><input type="date" id="ocr-date" name="date" /></div>
+          <div class="field"><label>Reference No.</label><input type="text" id="ocr-reference" name="reference" /></div>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">Confirm & Save</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CDN LIBS ============ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<script>
+  // Simple auth tab switcher (kept inline — tiny, purely presentational)
+  document.querySelectorAll('[data-auth-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.auth-panel').forEach((p) => p.classList.add('hidden'));
+      document.getElementById(`${btn.dataset.authTab}-form`)?.classList.remove('hidden');
+    });
+  });
+  // Default the transaction date field to today when the modal opens
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-open-modal="modal-tx"]')) {
+      const d = document.querySelector('#tx-form [name="occurred_on"]');
+      if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+    }
+  });
+</script>
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
