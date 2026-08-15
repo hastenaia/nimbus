@@ -1,4 +1,4 @@
-import { sum, groupBy, formatMoney } from './utils.js';
+import { summarizeTransactions, formatMoney } from './utils.js';
 
 /**
  * Generates plain-language coaching insights from raw transaction data.
@@ -12,16 +12,13 @@ export function generateInsights({ transactions, budgetsProgress, goals, categor
   const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonthKey = lastMonth.toISOString().slice(0, 7);
 
-  const thisMonthTx = transactions.filter((t) => t.occurred_on.slice(0, 7) === thisMonthKey);
-  const lastMonthTx = transactions.filter((t) => t.occurred_on.slice(0, 7) === lastMonthKey);
-
-  const thisExpense = sum(thisMonthTx.filter((t) => t.type === 'expense'), (t) => t.amount);
-  const lastExpense = sum(lastMonthTx.filter((t) => t.type === 'expense'), (t) => t.amount);
-  const thisIncome = sum(thisMonthTx.filter((t) => t.type === 'income'), (t) => t.amount);
+  const summary = summarizeTransactions(transactions);
+  const thisM = summary.byMonth.get(thisMonthKey) || { income: 0, expense: 0, categories: new Map() };
+  const lastM = summary.byMonth.get(lastMonthKey) || { expense: 0, categories: new Map() };
 
   // 1. Overall spending trend vs last month
-  if (lastExpense > 0) {
-    const delta = ((thisExpense - lastExpense) / lastExpense) * 100;
+  if (lastM.expense > 0) {
+    const delta = ((thisM.expense - lastM.expense) / lastM.expense) * 100;
     if (delta <= -5) {
       insights.push({ icon: '📉', text: `You spent ${Math.abs(delta).toFixed(0)}% less than last month. Great work!` });
     } else if (delta >= 10) {
@@ -30,12 +27,9 @@ export function generateInsights({ transactions, budgetsProgress, goals, categor
   }
 
   // 2. Category trend (biggest mover)
-  const catThis = groupBy(thisMonthTx.filter((t) => t.type === 'expense'), (t) => t.category_id);
-  const catLast = groupBy(lastMonthTx.filter((t) => t.type === 'expense'), (t) => t.category_id);
   let biggestMover = null;
-  Object.keys(catThis).forEach((catId) => {
-    const nowSum = sum(catThis[catId], (t) => t.amount);
-    const prevSum = sum(catLast[catId] || [], (t) => t.amount);
+  thisM.categories.forEach((nowSum, catId) => {
+    const prevSum = lastM.categories.get(catId) || 0;
     if (prevSum > 0) {
       const change = ((nowSum - prevSum) / prevSum) * 100;
       if (!biggestMover || Math.abs(change) > Math.abs(biggestMover.change)) {
@@ -50,8 +44,8 @@ export function generateInsights({ transactions, budgetsProgress, goals, categor
   }
 
   // 3. Savings rate
-  if (thisIncome > 0) {
-    const savingsRate = ((thisIncome - thisExpense) / thisIncome) * 100;
+  if (thisM.income > 0) {
+    const savingsRate = ((thisM.income - thisM.expense) / thisM.income) * 100;
     if (savingsRate >= 20) {
       insights.push({ icon: '💪', text: `Your savings rate is ${savingsRate.toFixed(0)}% this month — excellent discipline.` });
     } else if (savingsRate < 0) {
@@ -76,8 +70,8 @@ export function generateInsights({ transactions, budgetsProgress, goals, categor
   });
 
   // 6. Largest single expense this month
-  const largest = [...thisMonthTx.filter((t) => t.type === 'expense')].sort((a, b) => b.amount - a.amount)[0];
-  if (largest) {
+  const largest = summary.largestExpense;
+  if (largest && (largest.occurred_on || '').slice(0, 7) === thisMonthKey) {
     insights.push({ icon: '🔎', text: `Your largest expense this month was ${formatMoney(largest.amount)} (${largest.description || 'unlabeled'}).` });
   }
 

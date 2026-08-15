@@ -1,18 +1,32 @@
-// Uses Tesseract.js (window.Tesseract, loaded via CDN in index.html).
+// Uses Tesseract.js v5 (window.Tesseract, loaded via CDN in index.html).
 // Parses a GCash-style receipt screenshot and extracts likely fields.
 // This is heuristic text parsing over OCR output — always shown to the
 // user for confirmation/correction before anything is saved.
+//
+// A single worker is created lazily and reused for every scan, so the
+// language data / wasm core is only downloaded once instead of per image.
+
+let worker = null;
+let progressCb = null;
+
+async function getWorker() {
+  if (worker) return worker;
+  worker = await window.Tesseract.createWorker('eng', 1, {
+    logger: (m) => {
+      if (m.status === 'recognizing text' && progressCb) progressCb(Math.round(m.progress * 100));
+    },
+  });
+  return worker;
+}
 
 export async function runOcr(file, onProgress) {
   if (!window.Tesseract) throw new Error('Tesseract.js not loaded');
 
+  progressCb = onProgress || null;
+  const w = await getWorker();
   const {
     data: { text },
-  } = await window.Tesseract.recognize(file, 'eng', {
-    logger: (m) => {
-      if (m.status === 'recognizing text' && onProgress) onProgress(Math.round(m.progress * 100));
-    },
-  });
+  } = await w.recognize(file);
 
   return { rawText: text, parsed: parseGcashText(text) };
 }

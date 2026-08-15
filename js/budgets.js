@@ -1,5 +1,5 @@
 import { getSupabase } from './supabaseClient.js';
-import { formatMoney, monthKey, toast, sum } from './utils.js';
+import { formatMoney, toast } from './utils.js';
 
 export async function fetchBudgets(userId, month = monthKey()) {
   const supabase = getSupabase();
@@ -33,13 +33,12 @@ export async function deleteBudget(id) {
   if (error) throw error;
 }
 
-/** Combine budgets with actual month spend per category. */
-export function computeBudgetProgress(budgets, transactions) {
+/** Combine budgets with actual month spend per category.
+ *  `monthSpend` is a Map(category_id -> amount), ideally from a single
+ *  `summarizeTransactions()` pass so this is O(budgets) not O(budgets x tx). */
+export function computeBudgetProgress(budgets, monthSpend = new Map()) {
   return budgets.map((b) => {
-    const spent = sum(
-      transactions.filter((t) => t.type === 'expense' && t.category_id === b.category_id),
-      (t) => t.amount
-    );
+    const spent = monthSpend.get(b.category_id) || 0;
     const pct = b.amount > 0 ? Math.min(999, (spent / b.amount) * 100) : 0;
     let state = 'ok';
     if (pct >= 100) state = 'over';
@@ -66,9 +65,12 @@ export function renderBudgetList(containerEl, progress) {
       const cls = b.state === 'over' ? 'over' : b.state === 'warn' ? 'warn' : 'ok';
       return `
       <div class="field" data-budget-id="${b.id}">
-        <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px;margin-bottom:6px;">
           <span>${cat.icon || ''} ${cat.name || 'Category'}</span>
-          <span class="mono">${formatMoney(b.spent)} / ${formatMoney(b.amount)}</span>
+          <span style="display:flex;align-items:center;gap:8px;">
+            <span class="mono">${formatMoney(b.spent)} / ${formatMoney(b.amount)}</span>
+            <button class="row-del" data-del="${b.id}" aria-label="Delete budget" title="Delete">✕</button>
+          </span>
         </div>
         <div class="progress ${cls}"><span style="width:${Math.min(100, b.pct)}%"></span></div>
         ${b.state === 'over' ? '<div class="tx-meta" style="color:var(--coral);margin-top:4px;">Over budget</div>' : ''}

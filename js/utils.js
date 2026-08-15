@@ -22,17 +22,51 @@ export function monthKey(date = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
-export function startOfMonth(date = new Date()) {
-  const d = new Date(date);
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
 export function daysBetween(a, b) {
   return Math.ceil((new Date(b) - new Date(a)) / 86400000);
 }
 
-export function uid() {
-  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+/**
+ * Single-pass transaction summary used by dashboard, charts, coach and
+ * budget progress — avoids re-filtering/re-summing the list on every render.
+ * Returns per-month { income, expense, net, categories } plus totals and the
+ * largest single expense.
+ */
+export function summarizeTransactions(transactions) {
+  const byMonth = new Map();
+  let totalIncome = 0;
+  let totalExpense = 0;
+  let largestExpense = null;
+
+  for (const t of transactions) {
+    const month = (t.occurred_on || '').slice(0, 7) || 'unknown';
+    const amount = Number(t.amount) || 0;
+
+    let m = byMonth.get(month);
+    if (!m) {
+      m = { income: 0, expense: 0, net: 0, categories: new Map() };
+      byMonth.set(month, m);
+    }
+
+    if (t.type === 'income') {
+      m.income += amount;
+      m.net += amount;
+      totalIncome += amount;
+    } else {
+      m.expense += amount;
+      m.net -= amount;
+      totalExpense += amount;
+      if (!largestExpense || amount > largestExpense.amount) largestExpense = t;
+      const key = t.category_id || 'uncategorized';
+      m.categories.set(key, (m.categories.get(key) || 0) + amount);
+    }
+  }
+
+  return { byMonth, totalIncome, totalExpense, largestExpense, months: [...byMonth.keys()].sort() };
+}
+
+export function emptyMonthSummary() {
+  return { income: 0, expense: 0, net: 0, categories: new Map() };
 }
 
 export function toast(message) {
@@ -58,22 +92,14 @@ export function debounce(fn, ms = 250) {
  * Weighted blend of:
  *  - Savings rate (40%): 20%+ savings rate = full marks
  *  - Budget adherence (30%): staying under budget across categories
- *  - Cash flow trend (20%): income - expenses positive & improving
  *  - Goal progress (10%): average completion of active savings goals
+ *  - Baseline (20%): everyone starts with a head start.
  */
-export function calcHealthScore({ savingsRate, budgetAdherence, cashFlowTrend, goalProgress }) {
-  const savingsScore = Math.min(1, Math.max(0, savingsRate / 0.20)) * 40;
+export function calcHealthScore({ savingsRate, budgetAdherence, goalProgress }) {
+  const savingsScore = Math.min(1, Math.max(0, savingsRate / 20)) * 40;
   const budgetScore = Math.min(1, Math.max(0, budgetAdherence)) * 30;
-  const trendScore = Math.min(1, Math.max(0, (cashFlowTrend + 1) / 2)) * 20;
   const goalScore = Math.min(1, Math.max(0, goalProgress)) * 10;
-  return Math.round(savingsScore + budgetScore + trendScore + goalScore);
-}
-
-export function scoreLabel(score) {
-  if (score >= 85) return { label: 'Excellent', color: 'var(--growth)' };
-  if (score >= 65) return { label: 'Good', color: 'var(--growth)' };
-  if (score >= 45) return { label: 'Fair', color: 'var(--gold)' };
-  return { label: 'Needs attention', color: 'var(--coral)' };
+  return Math.round(savingsScore + budgetScore + goalScore + 20);
 }
 
 export function groupBy(arr, keyFn) {

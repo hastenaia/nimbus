@@ -8,8 +8,8 @@
 // key here or anywhere in frontend code.
 // ============================================================
 
-export const SUPABASE_URL = "https://gluitqtxaxszrjafrykh.supabase.co";
-export const SUPABASE_ANON_KEY = "sb_publishable_u4qGR_uxRGCvB2FEif_log_hlGfYCK6";
+export const SUPABASE_URL = "https://ahziihzklejfyflcbxyb.supabase.co";
+export const SUPABASE_ANON_KEY = "sb_publishable_4AddeW98W3ffY5vV1NcyGg_UFryFj64";
 
 export const APP_NAME = "Nimbus Finance";
 export const DEFAULT_CURRENCY = "PHP";

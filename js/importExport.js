@@ -14,11 +14,11 @@ export function exportToCsv(transactions) {
     t.amount,
     t.categories?.name || '',
     t.payment_method,
-    csvSafe(t.description),
-    csvSafe(t.notes),
+    t.description,
+    t.notes,
     (t.tags || []).join('|'),
   ]);
-  const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+  const csv = [headers, ...rows].map((r) => r.map(csvSafe).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   downloadBlob(blob, `nimbus-transactions-${Date.now()}.csv`);
 }
@@ -57,16 +57,59 @@ async function parseJsonFile(file) {
 
 async function parseCsvFile(file) {
   const text = await file.text();
-  const [headerLine, ...lines] = text.trim().split('\n');
-  const headers = headerLine.split(',').map((h) => h.trim().toLowerCase());
-  return lines
-    .filter(Boolean)
-    .map((line) => {
-      const cells = line.split(',');
+  const rows = parseCsv(text);
+  if (!rows.length) return [];
+  const headers = rows[0].map((h) => h.trim().toLowerCase());
+  return rows
+    .slice(1)
+    .filter((r) => r.some((c) => c.trim() !== ''))
+    .map((cells) => {
       const row = {};
-      headers.forEach((h, i) => (row[h] = cells[i]));
+      headers.forEach((h, i) => (row[h] = (cells[i] || '').trim()));
       return normalizeRow(row);
     });
+}
+
+/** Minimal RFC-4180 CSV parser: handles quoted fields, "" escapes and newlines inside quotes. */
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell);
+      cell = '';
+      if (row.some((c) => c.trim() !== '')) rows.push(row);
+      row = [];
+    } else {
+      cell += ch;
+    }
+  }
+  if (cell !== '' || row.length) {
+    row.push(cell);
+    if (row.some((c) => c.trim() !== '')) rows.push(row);
+  }
+  return rows;
 }
 
 async function parseExcelFile(file) {

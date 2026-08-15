@@ -2,12 +2,12 @@ import { getSupabase } from './supabaseClient.js';
 import { getSession, onAuthChange, wireAuthForms, signOut } from './auth.js';
 import { initQuoteCard, showSpecialQuote } from './quotes.js';
 import {
-  loadCategories, getCategories, fetchTransactions, addTransaction, updateTransaction,
-  deleteTransaction, applyFilters, setFilters, renderTransactionList,
+  loadCategories, getCategories, fetchTransactions, addTransaction,
+  deleteTransaction, bulkAddTransactions, applyFilters, setFilters, renderTransactionList,
 } from './transactions.js';
-import { fetchBudgets, upsertBudget, computeBudgetProgress, overallBudgetAdherence, renderBudgetList } from './budgets.js';
-import { fetchGoals, createGoal, contributeToGoal, renderGoalList } from './goals.js';
-import { fetchNetWorthItems, upsertNetWorthItem, computeNetWorth, renderNetWorthList } from './netWorth.js';
+import { fetchBudgets, upsertBudget, deleteBudget, computeBudgetProgress, overallBudgetAdherence, renderBudgetList } from './budgets.js';
+import { fetchGoals, createGoal, contributeToGoal, deleteGoal, renderGoalList } from './goals.js';
+import { fetchNetWorthItems, upsertNetWorthItem, deleteNetWorthItem, computeNetWorth, renderNetWorthList } from './netWorth.js';
 import { generateInsights, renderCoachCard } from './coach.js';
 import {
   renderIncomeVsExpense, renderCategoryPie, renderSavingsGrowth, renderCashFlow,
@@ -16,11 +16,16 @@ import {
 import { runOcr } from './ocr.js';
 import { exportToJson, exportToCsv, exportToExcel, parseImportFile } from './importExport.js';
 import { financialGrowthReport, categoryReport, renderReportTable } from './reports.js';
-import { formatMoney, monthKey, sum, toast, debounce } from './utils.js';
+import {
+  formatMoney, monthKey, sum, toast, debounce,
+  summarizeTransactions, emptyMonthSummary, calcHealthScore,
+} from './utils.js';
 
 let currentUser = null;
+let appBoot = null;
 let state = {
   transactions: [],
+  summary: { byMonth: new Map(), totalIncome: 0, totalExpense: 0, largestExpense: null, months: [] },
   budgetsProgress: [],
   goals: [],
   netWorthItems: [],
@@ -55,18 +60,17 @@ function goToRoute(route) {
 async function boot() {
   initTheme();
   initRouting();
+  wireModals();
+  wireFilters();
   wireAuthForms({ onAuthed: () => showApp() });
 
   const session = await getSession();
-  if (session) {
-    await showApp(session);
-  } else {
-    showAuthScreen();
-  }
+  if (session) await showApp(session);
+  else showAuthScreen();
 
-  onAuthChange(async (session) => {
-    if (session && !currentUser) await showApp(session);
-    if (!session) showAuthScreen();
+  onAuthChange((session) => {
+    if (session) showApp(session);
+    else showAuthScreen();
   });
 
   document.getElementById('logout-btn')?.addEventListener('click', async () => {
@@ -81,11 +85,26 @@ function showAuthScreen() {
   document.getElementById('app')?.classList.add('hidden');
 }
 
-async function showApp(session) {
+/**
+ * Boots the main app exactly once per login. Deduplicates the concurrent
+ * triggers (Supabase emits SIGNED_IN inside signInWithPassword while the form
+ * also calls onAuthed), which previously double-wired handlers and created
+ * duplicate transactions/goals on every save.
+ */
+function showApp(session) {
+  if (currentUser || appBoot) return appBoot || Promise.resolve();
+  appBoot = doShowApp(session).finally(() => (appBoot = null));
+  return appBoot;
+}
+
+async function doShowApp() {
   const supabase = getSupabase();
   const { data } = await supabase.auth.getUser();
   currentUser = data.user;
-  if (!currentUser) return showAuthScreen();
+  if (!currentUser) {
+    showAuthScreen();
+    return;
+  }
 
   document.getElementById('auth-screen')?.classList.add('hidden');
   document.getElementById('app')?.classList.remove('hidden');
@@ -97,8 +116,6 @@ async function showApp(session) {
   await refreshAllData();
   await initQuoteCard(currentUser);
   checkMonthStart();
-  wireModals();
-  wireFilters();
   renderAll();
 }
 
@@ -119,7 +136,9 @@ async function refreshAllData() {
     fetchNetWorthItems(currentUser.id),
   ]);
   state.transactions = tx;
-  state.budgetsProgress = computeBudgetProgress(budgets, tx.filter((t) => t.occurred_on.startsWith(monthKey().slice(0, 7))));
+  state.summary = summarizeTransactions(tx);
+  const monthSpend = state.summary.byMonth.get(monthKey().slice(0, 7))?.categories || new Map();
+  state.budgetsProgress = computeBudgetProgress(budgets, monthSpend);
   state.goals = goals;
   state.netWorthItems = netWorth;
 }
@@ -135,13 +154,13 @@ function renderAll() {
 
 function renderDashboard() {
   const thisMonth = monthKey().slice(0, 7);
-  const monthTx = state.transactions.filter((t) => t.occurred_on.startsWith(thisMonth));
-  const income = sum(monthTx.filter((t) => t.type === 'income'), (t) => t.amount);
-  const expenses = sum(monthTx.filter((t) => t.type === 'expense'), (t) => t.amount);
-  const savings = income - expenses;
+  const s = state.summary;
+  const thisM = s.byMonth.get(thisMonth) || emptyMonthSummary();
+  const income = thisM.income;
+  const expenses = thisM.expense;
+  const savings = thisM.net;
   const savingsRate = income > 0 ? (savings / income) * 100 : 0;
-  const balance = sum(state.transactions.filter((t) => t.type === 'income'), (t) => t.amount) -
-    sum(state.transactions.filter((t) => t.type === 'expense'), (t) => t.amount);
+  const balance = s.totalIncome - s.totalExpense;
 
   setText('stat-balance', formatMoney(balance));
   setText('stat-income', formatMoney(income));
@@ -159,13 +178,9 @@ function renderDashboard() {
     budgetPct: budgetAdherence,
     goalPct: goalProgress,
   });
-  const healthScore = Math.round(
-    Math.min(1, Math.max(0, savingsRate / 20)) * 40 + budgetAdherence * 30 + goalProgress * 10 + 20
-  );
-  setText('health-score-value', `${healthScore}`);
+  setText('health-score-value', `${calcHealthScore({ savingsRate, budgetAdherence, goalProgress })}`);
 
-  // Largest expense + upcoming (recurring) placeholder
-  const largest = [...monthTx.filter((t) => t.type === 'expense')].sort((a, b) => b.amount - a.amount)[0];
+  const largest = s.largestExpense && (s.largestExpense.occurred_on || '').slice(0, 7) === thisMonth ? s.largestExpense : null;
   setText('stat-largest-expense', largest ? formatMoney(largest.amount) : '—');
 
   renderTransactionList(document.getElementById('recent-tx-list'), state.transactions.slice(0, 6));
@@ -180,9 +195,9 @@ function renderDashboard() {
     })
   );
 
-  renderIncomeVsExpense('chart-income-expense', state.transactions);
-  renderCategoryPie('chart-category-pie', monthTx, getCategories());
-  renderSavingsGrowth('chart-savings-growth', state.transactions);
+  renderIncomeVsExpense('chart-income-expense', s);
+  renderCategoryPie('chart-category-pie', thisM.categories, getCategories());
+  renderSavingsGrowth('chart-savings-growth', s);
 }
 
 function renderTransactionsPage() {
@@ -206,9 +221,9 @@ function renderNetWorthPage() {
   setText('networth-assets', formatMoney(assets));
   setText('networth-liabilities', formatMoney(liabilities));
   setText('networth-total', formatMoney(netWorth));
-  const growth = financialGrowthReport(state.transactions, state.netWorthItems);
+  const growth = financialGrowthReport(state.summary, state.netWorthItems);
   renderGrowthTimeline('chart-growth-timeline', growth.trend);
-  renderCashFlow('chart-cash-flow', state.transactions);
+  renderCashFlow('chart-cash-flow', state.summary);
 }
 
 function renderReports() {
@@ -235,6 +250,7 @@ function wireModals() {
   wireNetWorthModal();
   wireOcrModal();
   wireImportExport();
+  wireRowDeletes();
 
   document.querySelectorAll('[data-open-modal]').forEach((btn) => {
     btn.addEventListener('click', () => openModal(btn.dataset.openModal));
@@ -280,16 +296,6 @@ function wireTransactionModal() {
       renderAll();
     } catch (err) {
       toast(err.message || 'Could not save transaction');
-    }
-  });
-
-  document.getElementById('tx-full-list')?.addEventListener('click', async (e) => {
-    const row = e.target.closest('.tx-row');
-    if (!row) return;
-    if (confirm('Delete this transaction?')) {
-      await deleteTransaction(row.dataset.id);
-      await refreshAllData();
-      renderAll();
     }
   });
 }
@@ -340,9 +346,13 @@ function wireGoalModal() {
     if (!amount || isNaN(parseFloat(amount))) return;
     const goal = state.goals.find((g) => g.id === btn.dataset.goalId);
     if (!goal) return;
-    await contributeToGoal(goal, parseFloat(amount));
-    await refreshAllData();
-    renderAll();
+    try {
+      await contributeToGoal(goal, parseFloat(amount));
+      await refreshAllData();
+      renderAll();
+    } catch (err) {
+      toast(err.message || 'Could not add contribution');
+    }
   });
 }
 
@@ -433,28 +443,52 @@ function wireImportExport() {
     if (!file) return;
     try {
       const rows = await parseImportFile(file);
-      let count = 0;
-      for (const row of rows) {
-        const cat = getCategories().find((c) => c.name.toLowerCase() === (row.categoryName || '').toLowerCase());
-        await addTransaction(currentUser.id, {
-          type: row.type,
-          amount: row.amount,
-          category_id: cat?.id || null,
-          payment_method: row.payment_method,
-          description: row.description,
-          notes: row.notes,
-          occurred_on: row.occurred_on,
-          source: 'import',
-        });
-        count++;
+      const valid = rows.filter((r) => Number(r.amount) > 0);
+      if (!valid.length) {
+        toast('No valid rows to import');
+        return;
       }
-      toast(`Imported ${count} transactions`);
+      const cats = new Map(getCategories().map((c) => [c.name.toLowerCase(), c]));
+      await bulkAddTransactions(currentUser.id, valid.map((r) => ({
+        type: r.type,
+        amount: r.amount,
+        category_id: r.categoryName ? (cats.get(r.categoryName.toLowerCase())?.id ?? null) : null,
+        payment_method: r.payment_method,
+        description: r.description,
+        notes: r.notes,
+        occurred_on: r.occurred_on,
+        source: 'import',
+      })));
+      toast(`Imported ${valid.length} transactions`);
+      e.target.value = '';
       await refreshAllData();
       renderAll();
     } catch (err) {
       toast(err.message || 'Import failed');
     }
   });
+}
+
+/** Delegated explicit-delete buttons across all list containers. */
+function wireRowDeletes() {
+  const attach = (id, del) =>
+    document.getElementById(id)?.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.row-del');
+      if (!btn || !confirm('Delete this item?')) return;
+      try {
+        await del(btn.dataset.del);
+        await refreshAllData();
+        renderAll();
+      } catch (err) {
+        toast(err.message || 'Could not delete');
+      }
+    });
+
+  attach('tx-full-list', deleteTransaction);
+  attach('recent-tx-list', deleteTransaction);
+  attach('goals-list', deleteGoal);
+  attach('networth-list', deleteNetWorthItem);
+  attach('budget-list', deleteBudget);
 }
 
 function wireFilters() {

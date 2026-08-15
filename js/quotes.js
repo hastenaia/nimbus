@@ -7,6 +7,8 @@ let history = [];
 let currentQuote = null;
 let rotateTimer = null;
 let favoriteIds = new Set();
+let buttonsWired = false;
+let quoteUser = null;
 
 async function loadQuotesData() {
   if (QUOTES.length) return QUOTES;
@@ -30,26 +32,22 @@ function seededDailyQuote() {
 }
 
 export async function initQuoteCard(user) {
+  quoteUser = user;
   await loadQuotesData();
   await loadFavorites(user);
 
-  const stored = sessionStorage.getItem('nimbus_last_quote_date');
-  const todayStr = new Date().toISOString().slice(0, 10);
-
-  if (stored !== todayStr) {
-    currentQuote = seededDailyQuote();
-    sessionStorage.setItem('nimbus_last_quote_date', todayStr);
-  } else {
-    currentQuote = seededDailyQuote();
-  }
+  currentQuote = seededDailyQuote();
   history = [currentQuote.id];
   renderQuote();
 
   clearInterval(rotateTimer);
   rotateTimer = setInterval(() => nextQuote(), QUOTE_ROTATE_MS);
 
-  document.getElementById('quote-refresh-btn')?.addEventListener('click', () => nextQuote());
-  document.getElementById('quote-fav-btn')?.addEventListener('click', () => toggleFavorite(user));
+  if (!buttonsWired) {
+    buttonsWired = true;
+    document.getElementById('quote-refresh-btn')?.addEventListener('click', () => nextQuote());
+    document.getElementById('quote-fav-btn')?.addEventListener('click', () => toggleFavorite());
+  }
 }
 
 export function nextQuote() {
@@ -89,7 +87,8 @@ async function loadFavorites(user) {
   }
 }
 
-async function toggleFavorite(user) {
+async function toggleFavorite() {
+  const user = quoteUser;
   if (!user || !currentQuote) return;
   const supabase = getSupabase();
   if (favoriteIds.has(currentQuote.id)) {

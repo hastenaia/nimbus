@@ -189,36 +189,48 @@ alter table public.favorite_quotes enable row level security;
 alter table public.user_settings enable row level security;
 
 -- Generic "own rows only" policy pattern, applied per table.
+-- Policies are dropped first so the whole script is safe to re-run.
+drop policy if exists "profiles_self" on public.profiles;
 create policy "profiles_self" on public.profiles
   for all using (auth.uid() = id) with check (auth.uid() = id);
 
+drop policy if exists "categories_self" on public.categories;
 create policy "categories_self" on public.categories
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "transactions_self" on public.transactions;
 create policy "transactions_self" on public.transactions
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "budgets_self" on public.budgets;
 create policy "budgets_self" on public.budgets
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "goals_self" on public.savings_goals;
 create policy "goals_self" on public.savings_goals
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "networth_self" on public.net_worth_items;
 create policy "networth_self" on public.net_worth_items
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "recurring_self" on public.recurring_transactions;
 create policy "recurring_self" on public.recurring_transactions
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "ocr_self" on public.ocr_imports;
 create policy "ocr_self" on public.ocr_imports
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "reports_self" on public.monthly_reports;
 create policy "reports_self" on public.monthly_reports
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "quotes_self" on public.favorite_quotes;
 create policy "quotes_self" on public.favorite_quotes
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+drop policy if exists "settings_self" on public.user_settings;
 create policy "settings_self" on public.user_settings
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
@@ -262,11 +274,14 @@ create trigger on_auth_user_created
 insert into storage.buckets (id, name, public) values ('receipts', 'receipts', false)
   on conflict (id) do nothing;
 
+drop policy if exists "receipts_owner_read" on storage.objects;
 create policy "receipts_owner_read" on storage.objects
   for select using (bucket_id = 'receipts' and auth.uid()::text = (storage.foldername(name))[1]);
 
+drop policy if exists "receipts_owner_write" on storage.objects;
 create policy "receipts_owner_write" on storage.objects
   for insert with check (bucket_id = 'receipts' and auth.uid()::text = (storage.foldername(name))[1]);
 
+drop policy if exists "receipts_owner_delete" on storage.objects;
 create policy "receipts_owner_delete" on storage.objects
   for delete using (bucket_id = 'receipts' and auth.uid()::text = (storage.foldername(name))[1]);

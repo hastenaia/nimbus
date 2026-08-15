@@ -1,5 +1,5 @@
 import { getSupabase } from './supabaseClient.js';
-import { formatMoney, formatDate, daysBetween, toast } from './utils.js';
+import { formatMoney, daysBetween, toast } from './utils.js';
 import { showSpecialQuote } from './quotes.js';
 
 export async function fetchGoals(userId) {
@@ -85,15 +85,6 @@ function fireConfetti() {
   }
 }
 
-export function estimateCompletion(goal, avgMonthlyContribution) {
-  if (!avgMonthlyContribution || avgMonthlyContribution <= 0) return null;
-  const remaining = goal.target_amount - goal.current_amount;
-  const monthsLeft = Math.ceil(remaining / avgMonthlyContribution);
-  const d = new Date();
-  d.setMonth(d.getMonth() + monthsLeft);
-  return d;
-}
-
 export function renderGoalList(containerEl, goals) {
   if (!containerEl) return;
   if (!goals.length) {
@@ -109,7 +100,10 @@ export function renderGoalList(containerEl, goals) {
       <div class="card solid" data-goal-id="${g.id}" style="margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div style="font-weight:600;">${g.icon || '🎯'} ${escapeHtml(g.name)}</div>
-          <div class="mono" style="font-size:13px;">${Math.round(pct)}%</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="mono" style="font-size:13px;">${Math.round(pct)}%</div>
+            <button class="row-del" data-del="${g.id}" aria-label="Delete goal" title="Delete">✕</button>
+          </div>
         </div>
         <div class="progress ${g.completed_at ? 'ok' : cls}" style="margin:10px 0;"><span style="width:${pct}%"></span></div>
         <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-dim);">

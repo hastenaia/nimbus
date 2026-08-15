@@ -1,5 +1,7 @@
-// Thin wrapper around Chart.js (loaded via CDN in index.html as window.Chart)
-import { groupBy, sum, formatMoney } from './utils.js';
+// Thin wrapper around Chart.js (loaded via CDN in index.html as window.Chart).
+// Charts render from a `summarizeTransactions()` summary so the transaction
+// list is only walked once, and existing Chart instances are updated in place
+// (no destroy/recreate churn on every re-render or theme toggle).
 
 const instances = {};
 
@@ -21,7 +23,7 @@ function baseOptions(extra = {}) {
   return {
     responsive: true,
     maintainAspectRatio: false,
-    animation: { duration: 600, easing: 'easeOutQuart' },
+    animation: { duration: 300, easing: 'easeOutQuart' },
     plugins: { legend: { labels: { color: c.text, boxWidth: 10, font: { size: 11 } } } },
     scales: extra.noScales
       ? {}
@@ -33,19 +35,25 @@ function baseOptions(extra = {}) {
   };
 }
 
+/** Render a chart, reusing the existing instance when one exists for this canvas. */
 function render(canvasId, config) {
   const el = document.getElementById(canvasId);
   if (!el || !window.Chart) return;
-  if (instances[canvasId]) instances[canvasId].destroy();
+  const existing = instances[canvasId];
+  if (existing) {
+    existing.data = config.data;
+    existing.options = config.options;
+    existing.update();
+    return;
+  }
   instances[canvasId] = new window.Chart(el, config);
 }
 
-export function renderIncomeVsExpense(canvasId, transactions) {
+export function renderIncomeVsExpense(canvasId, summary) {
   const c = themeColors();
-  const byMonth = groupBy(transactions, (t) => t.occurred_on.slice(0, 7));
-  const months = Object.keys(byMonth).sort().slice(-6);
-  const income = months.map((m) => sum(byMonth[m].filter((t) => t.type === 'income'), (t) => t.amount));
-  const expense = months.map((m) => sum(byMonth[m].filter((t) => t.type === 'expense'), (t) => t.amount));
+  const months = summary.months.slice(-6);
+  const income = months.map((m) => summary.byMonth.get(m).income);
+  const expense = months.map((m) => summary.byMonth.get(m).expense);
 
   render(canvasId, {
     type: 'bar',
@@ -60,16 +68,15 @@ export function renderIncomeVsExpense(canvasId, transactions) {
   });
 }
 
-export function renderCategoryPie(canvasId, transactions, categories) {
+/** `monthCategories` is the per-month Map(category_id -> amount) from the summary. */
+export function renderCategoryPie(canvasId, monthCategories, categories) {
   const c = themeColors();
-  const expenses = transactions.filter((t) => t.type === 'expense');
-  const byCat = groupBy(expenses, (t) => t.category_id || 'uncategorized');
   const labels = [];
   const data = [];
-  Object.entries(byCat).forEach(([catId, txs]) => {
+  monthCategories.forEach((amount, catId) => {
     const cat = categories.find((x) => x.id === catId);
     labels.push(cat?.name || 'Other');
-    data.push(sum(txs, (t) => t.amount));
+    data.push(amount);
   });
 
   render(canvasId, {
@@ -79,22 +86,18 @@ export function renderCategoryPie(canvasId, transactions, categories) {
   });
 }
 
-export function renderSavingsGrowth(canvasId, transactions) {
+export function renderSavingsGrowth(canvasId, summary) {
   const c = themeColors();
-  const byMonth = groupBy(transactions, (t) => t.occurred_on.slice(0, 7));
-  const months = Object.keys(byMonth).sort();
   let running = 0;
-  const data = months.map((m) => {
-    const inc = sum(byMonth[m].filter((t) => t.type === 'income'), (t) => t.amount);
-    const exp = sum(byMonth[m].filter((t) => t.type === 'expense'), (t) => t.amount);
-    running += inc - exp;
+  const data = summary.months.map((m) => {
+    running += summary.byMonth.get(m).net;
     return running;
   });
 
   render(canvasId, {
     type: 'line',
     data: {
-      labels: months,
+      labels: summary.months,
       datasets: [
         {
           label: 'Cumulative Savings',
@@ -111,15 +114,10 @@ export function renderSavingsGrowth(canvasId, transactions) {
   });
 }
 
-export function renderCashFlow(canvasId, transactions) {
+export function renderCashFlow(canvasId, summary) {
   const c = themeColors();
-  const byMonth = groupBy(transactions, (t) => t.occurred_on.slice(0, 7));
-  const months = Object.keys(byMonth).sort().slice(-6);
-  const flow = months.map((m) => {
-    const inc = sum(byMonth[m].filter((t) => t.type === 'income'), (t) => t.amount);
-    const exp = sum(byMonth[m].filter((t) => t.type === 'expense'), (t) => t.amount);
-    return inc - exp;
-  });
+  const months = summary.months.slice(-6);
+  const flow = months.map((m) => summary.byMonth.get(m).net);
 
   render(canvasId, {
     type: 'bar',

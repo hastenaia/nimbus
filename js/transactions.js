@@ -1,9 +1,8 @@
 import { getSupabase } from './supabaseClient.js';
-import { formatMoney, formatDate, toast, uid } from './utils.js';
+import { formatMoney, formatDate, toast } from './utils.js';
 import { showSpecialQuote } from './quotes.js';
 
 let categories = [];
-let cachedTx = [];
 let activeFilters = { search: '', category: 'all', paymentMethod: 'all', type: 'all' };
 
 export async function loadCategories(userId) {
@@ -45,8 +44,7 @@ export async function fetchTransactions(userId, { from, to } = {}) {
     console.error(error);
     return [];
   }
-  cachedTx = data || [];
-  return cachedTx;
+  return data || [];
 }
 
 export async function addTransaction(userId, payload) {
@@ -60,6 +58,15 @@ export async function addTransaction(userId, payload) {
   toast(payload.type === 'income' ? 'Income added' : 'Expense logged');
   showSpecialQuote(payload.type === 'income' ? 'income' : 'expense');
   return data;
+}
+
+/** Batch-insert many transactions in a single request (used by CSV/Excel/JSON import). */
+export async function bulkAddTransactions(userId, rows) {
+  const supabase = getSupabase();
+  const payload = rows.map((r) => ({ user_id: userId, ...r }));
+  const { data, error } = await supabase.from('transactions').insert(payload).select();
+  if (error) throw error;
+  return data || [];
 }
 
 export async function updateTransaction(id, payload) {
@@ -119,6 +126,7 @@ export function renderTransactionList(containerEl, list) {
           <div class="tx-meta">${formatDate(tx.occurred_on)} · ${labelForMethod(tx.payment_method)}${tx.is_recurring ? ' · Recurring' : ''}</div>
         </div>
         <div class="tx-amount ${tx.type}">${sign}${formatMoney(tx.amount)}</div>
+        <button class="row-del" data-del="${tx.id}" aria-label="Delete transaction" title="Delete">✕</button>
       </div>`;
     })
     .join('');
@@ -131,5 +139,3 @@ function labelForMethod(m) {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-
-export { cachedTx as getCachedTransactions };

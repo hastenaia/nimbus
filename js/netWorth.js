@@ -52,6 +52,7 @@ export function renderNetWorthList(containerEl, items) {
           <div class="tx-meta">${i.kind === 'asset' ? 'Asset' : 'Liability'}</div>
         </div>
         <div class="tx-amount ${i.kind === 'asset' ? 'income' : 'expense'}">${formatMoney(i.value)}</div>
+        <button class="row-del" data-del="${i.id}" aria-label="Delete entry" title="Delete">✕</button>
       </div>`
     )
     .join('');
