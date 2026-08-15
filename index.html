@@ -208,6 +208,8 @@
       <div class="card">
         <p style="color:var(--text-dim);font-size:13.5px;">Theme, currency, and category management. Manage default categories, add custom ones, and control notification preferences here.</p>
       </div>
+      <div class="section-head" style="margin-top:18px;"><h3>Categories</h3><button class="btn btn-primary btn-sm" data-open-modal="modal-category">+ Add Category</button></div>
+      <div class="card" id="category-list"></div>
     </section>
   </div>
 
@@ -288,6 +290,23 @@
       <div class="field"><label>Name</label><input type="text" name="name" placeholder="e.g. Savings account, Car loan" required /></div>
       <div class="field"><label>Value</label><input type="number" step="0.01" name="value" required /></div>
       <button class="btn btn-primary btn-block" type="submit">Save</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-category">
+  <div class="modal">
+    <div class="modal-head"><h3>Add Category</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <form id="category-form">
+      <div class="field-row">
+        <div class="field"><label>Name</label><input type="text" name="name" placeholder="e.g. Groceries" required /></div>
+        <div class="field"><label>Type</label><select name="type"><option value="expense">Expense</option><option value="income">Income</option></select></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Icon (emoji)</label><input type="text" name="icon" value="💸" maxlength="4" /></div>
+        <div class="field"><label>Color</label><input type="color" name="color" value="#6366F1" /></div>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">Save Category</button>
     </form>
   </div>
 </div>

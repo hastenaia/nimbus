@@ -6,6 +6,7 @@ import {
   deleteTransaction, bulkAddTransactions, applyFilters, setFilters, renderTransactionList,
 } from './transactions.js';
 import { fetchBudgets, upsertBudget, deleteBudget, computeBudgetProgress, overallBudgetAdherence, renderBudgetList } from './budgets.js';
+import { createCategory, deleteCategory } from './categories.js';
 import { fetchGoals, createGoal, contributeToGoal, deleteGoal, renderGoalList } from './goals.js';
 import { fetchNetWorthItems, upsertNetWorthItem, deleteNetWorthItem, computeNetWorth, renderNetWorthList } from './netWorth.js';
 import { generateInsights, renderCoachCard } from './coach.js';
@@ -117,6 +118,7 @@ async function doShowApp() {
   await initQuoteCard(currentUser);
   checkMonthStart();
   renderAll();
+  renderCategories();
 }
 
 function checkMonthStart() {
@@ -237,6 +239,31 @@ function renderReports() {
   ]);
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderCategories() {
+  const el = document.getElementById('category-list');
+  if (!el) return;
+  const cats = getCategories();
+  if (!cats.length) {
+    el.innerHTML = `<div class="empty-state"><div class="ico">🏷️</div>No categories yet. Add your first one above.</div>`;
+    return;
+  }
+  el.innerHTML = cats
+    .map((c) => `
+      <div class="tx-row" data-id="${c.id}">
+        <div class="tx-icon" style="background:${c.color ? c.color + '22' : 'var(--signal-soft)'}">${c.icon || '💸'}</div>
+        <div class="tx-main">
+          <div class="tx-title">${escapeHtml(c.name)}</div>
+          <div class="tx-meta">${c.type === 'income' ? 'Income' : 'Expense'}${c.is_default ? ' · Default' : ''}</div>
+        </div>
+        <button class="row-del" data-del="${c.id}" aria-label="Delete category" title="Delete">✕</button>
+      </div>`)
+    .join('');
+}
+
 function setText(id, val) {
   const el = document.getElementById(id);
   if (el) el.textContent = val;
@@ -249,6 +276,8 @@ function wireModals() {
   wireGoalModal();
   wireNetWorthModal();
   wireOcrModal();
+  wireCategoryModal();
+  wireCategoryList();
   wireImportExport();
   wireRowDeletes();
 
@@ -270,7 +299,10 @@ function populateCategorySelects() {
   document.querySelectorAll('.category-select').forEach((sel) => {
     const currentType = sel.dataset.filterType;
     const options = cats.filter((c) => !currentType || c.type === currentType);
-    sel.innerHTML = options.map((c) => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
+    const keepAll = sel.querySelector('option[value="all"]') !== null;
+    sel.innerHTML =
+      (keepAll ? '<option value="all">All</option>' : '') +
+      options.map((c) => `<option value="${c.id}">${c.icon} ${c.name}</option>`).join('');
   });
 }
 
@@ -423,6 +455,53 @@ function wireOcrModal() {
       renderAll();
     } catch (err) {
       toast(err.message || 'Could not save transaction');
+    }
+  });
+}
+
+function wireCategoryModal() {
+  const form = document.getElementById('category-form');
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    try {
+      await createCategory(currentUser.id, {
+        name: fd.get('name'),
+        type: fd.get('type'),
+        icon: fd.get('icon'),
+        color: fd.get('color'),
+      });
+      form.reset();
+      const icon = form.querySelector('[name="icon"]');
+      const color = form.querySelector('[name="color"]');
+      if (icon) icon.value = '💸';
+      if (color) color.value = '#6366F1';
+      document.getElementById('modal-category')?.classList.remove('open');
+      await loadCategories(currentUser.id);
+      populateCategorySelects();
+      renderCategories();
+      renderAll();
+    } catch (err) {
+      toast(err.message || 'Could not create category');
+    }
+  });
+}
+
+function wireCategoryList() {
+  document.getElementById('category-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.row-del');
+    if (!btn || !confirm('Delete this category? Budgets for it will be removed too.')) return;
+    try {
+      await deleteCategory(btn.dataset.del);
+      setFilters({ category: 'all' });
+      const filter = document.getElementById('tx-filter-category');
+      if (filter) filter.value = 'all';
+      await loadCategories(currentUser.id);
+      populateCategorySelects();
+      renderCategories();
+      renderAll();
+    } catch (err) {
+      toast(err.message || 'Could not delete category');
     }
   });
 }
