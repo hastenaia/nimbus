@@ -9,7 +9,7 @@ import { fetchBudgets, upsertBudget, deleteBudget, computeBudgetProgress, overal
 import { createCategory, deleteCategory } from './categories.js';
 import { fetchGoals, createGoal, contributeToGoal, deleteGoal, renderGoalList } from './goals.js';
 import { fetchNetWorthItems, upsertNetWorthItem, deleteNetWorthItem, computeNetWorth, renderNetWorthList } from './netWorth.js';
-import { generateInsights, renderCoachCard } from './coach.js';
+import { generateInsights, renderCoachCard, computeHeadline, answerCoachQuestion } from './coach.js';
 import {
   renderIncomeVsExpense, renderCategoryPie, renderSavingsGrowth, renderCashFlow,
   renderBudgetBreakdown, renderGrowthTimeline, renderHealthRings,
@@ -64,6 +64,8 @@ async function boot() {
   wireModals();
   wireFilters();
   wireAuthForms({ onAuthed: () => showApp() });
+  wireCoach();
+  wireDelegatedActions();
 
   const session = await getSession();
   if (session) await showApp(session);
@@ -187,15 +189,14 @@ function renderDashboard() {
 
   renderTransactionList(document.getElementById('recent-tx-list'), state.transactions.slice(0, 6));
 
-  renderCoachCard(
-    document.getElementById('coach-card-body'),
-    generateInsights({
-      transactions: state.transactions,
-      budgetsProgress: state.budgetsProgress,
-      goals: state.goals,
-      categories: getCategories(),
-    })
-  );
+  const insights = generateInsights(coachContext());
+  renderCoachCard(document.getElementById('coach-card-body'), insights);
+  const headline = computeHeadline(insights);
+  const headlineEl = document.getElementById('coach-headline');
+  if (headlineEl) {
+    headlineEl.textContent = headline.text;
+    headlineEl.className = `coach-headline ${headline.cls}`;
+  }
 
   renderIncomeVsExpense('chart-income-expense', s);
   renderCategoryPie('chart-category-pie', thisM.categories, getCategories());
@@ -586,6 +587,46 @@ function wireFilters() {
       setFilters({ [map[id]]: e.target.value });
       renderTransactionsPage();
     });
+  });
+}
+
+function coachContext() {
+  return {
+    transactions: state.transactions,
+    budgetsProgress: state.budgetsProgress,
+    goals: state.goals,
+    categories: getCategories(),
+    netWorthItems: state.netWorthItems,
+  };
+}
+
+function wireCoach() {
+  document.querySelectorAll('[data-coach-q]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const q = btn.dataset.coachQ;
+      let amount = null;
+      if (q === 'afford') {
+        const input = prompt('What amount do you want to check?');
+        if (!input || isNaN(parseFloat(input))) return;
+        amount = parseFloat(input);
+      }
+      const answer = answerCoachQuestion(q, coachContext(), amount);
+      const el = document.getElementById('coach-answer');
+      if (el) el.innerHTML = `<div class="coach-answer-row"><span>${answer.icon}</span><span>${escapeHtml(answer.text)}</span></div>`;
+    });
+  });
+}
+
+/** Delegated listeners so dynamically-rendered coach action buttons work. */
+function wireDelegatedActions() {
+  document.addEventListener('click', (e) => {
+    const routeBtn = e.target.closest('[data-route]');
+    if (routeBtn?.dataset.route) {
+      goToRoute(routeBtn.dataset.route);
+      return;
+    }
+    const modalBtn = e.target.closest('[data-open-modal]');
+    if (modalBtn?.dataset.openModal) openModal(modalBtn.dataset.openModal);
   });
 }
 
