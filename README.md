@@ -93,6 +93,9 @@ nimbus-finance/
 │   ├── budgets.js             Monthly budgets + progress calculation
 │   ├── goals.js               Savings goals + completion celebration
 │   ├── netWorth.js            Manual assets/liabilities, net worth
+│   ├── recurring.js           Recurring templates + auto-generation
+│   ├── autocat.js             Category auto-suggest (keywords + history)
+│   ├── gcashImport.js         GCash CSV history import parser
 │   ├── coach.js                Rule-based AI financial coach (offline)
 │   ├── quotes.js               Daily quote rotation + favorites
 │   ├── charts.js               Chart.js wrappers + health-ring SVG
@@ -113,9 +116,12 @@ manual transactions with all fields/filters, categories, monthly budgets
 with progress bars, savings goals with contributions and a confetti
 celebration on completion, manual net worth tracking, all the specified
 charts, CSV/Excel/JSON import and export, GCash receipt OCR with an
-editable confirmation step before saving, a rule-based financial coach card,
-and the full daily-quote system with 320 original quotes, favoriting, and
-special contextual quotes.
+editable confirmation step before saving, GCash CSV history import with
+dedupe, recurring transactions with automatic generation of due
+occurrences on login, smart category auto-suggest (keyword map + learned
+from your own history), a rule-based financial coach card, and the full
+daily-quote system with 320 original quotes, favoriting, and special
+contextual quotes.
 
 **Intentionally simplified / left as clean extension points**, since a
 single response can't stand up a full production system end-to-end:
@@ -124,10 +130,10 @@ single response can't stand up a full production system end-to-end:
   LLM-generated commentary, `coach.js` is the one file to swap — call your
   model of choice with the same `{transactions, budgetsProgress, goals}`
   input and render its response into `#coach-card-body`.
-- Recurring transactions have a database table and a manual "recurring"
-  checkbox, but automatic month-to-month generation isn't wired up yet —
-  a small scheduled function (Supabase Edge Function on a cron trigger)
-  is the natural way to add that without needing a server of your own.
+- Recurring generation runs client-side on login (`recurring.js`) and
+  catches up missed occurrences; it intentionally needs the app to be
+  opened for a bill to be auto-logged. A Supabase Edge Function on a cron
+  trigger would make it fully server-side.
 - PWA/offline mode, push notifications, multi-currency, and bank
   integrations are structured for (see table names and settings JSONB
   column) but not built — each is realistically its own project.

@@ -76,7 +76,7 @@ async function parseCsvFile(file) {
 }
 
 /** Minimal RFC-4180 CSV parser: handles quoted fields, "" escapes and newlines inside quotes. */
-function parseCsv(text) {
+export function parseCsv(text) {
   const rows = [];
   let row = [];
   let cell = '';

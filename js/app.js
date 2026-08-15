@@ -16,6 +16,9 @@ import {
 } from './charts.js';
 import { runOcr, preloadOcr } from './ocr.js';
 import { exportToJson, exportToCsv, exportToExcel, parseImportFile } from './importExport.js';
+import { fetchRecurring, addRecurring, deleteRecurring, generateDueTransactions, renderRecurringList } from './recurring.js';
+import { parseGcashCsv } from './gcashImport.js';
+import { suggestCategoryId } from './autocat.js';
 import { financialGrowthReport, categoryReport, renderReportTable } from './reports.js';
 import {
   formatMoney, monthKey, sum, toast, debounce,
@@ -30,6 +33,7 @@ let state = {
   budgetsProgress: [],
   goals: [],
   netWorthItems: [],
+  recurring: [],
 };
 
 // ---------------- THEME ----------------
@@ -66,6 +70,7 @@ async function boot() {
   wireAuthForms({ onAuthed: () => showApp() });
   wireCoach();
   wireDelegatedActions();
+  wireCategorySuggest();
 
   const session = await getSession();
   if (session) await showApp(session);
@@ -118,6 +123,12 @@ async function doShowApp() {
 
   try {
     await loadCategories(currentUser.id);
+    try {
+      const generated = await generateDueTransactions(currentUser.id);
+      if (generated > 0) toast(`Logged ${generated} recurring transaction${generated > 1 ? 's' : ''}`);
+    } catch (err) {
+      console.error('Recurring generation failed:', err);
+    }
     await refreshAllData();
     await initQuoteCard(currentUser);
     checkMonthStart();
@@ -138,11 +149,12 @@ function checkMonthStart() {
 }
 
 async function refreshAllData() {
-  const [tx, budgets, goals, netWorth] = await Promise.all([
+  const [tx, budgets, goals, netWorth, recurring] = await Promise.all([
     fetchTransactions(currentUser.id),
     fetchBudgets(currentUser.id, monthKey()),
     fetchGoals(currentUser.id),
     fetchNetWorthItems(currentUser.id),
+    fetchRecurring(currentUser.id),
   ]);
   state.transactions = tx;
   state.summary = summarizeTransactions(tx);
@@ -150,6 +162,7 @@ async function refreshAllData() {
   state.budgetsProgress = computeBudgetProgress(budgets, monthSpend);
   state.goals = goals;
   state.netWorthItems = netWorth;
+  state.recurring = recurring;
 }
 
 // ---------------- RENDER ----------------
@@ -159,6 +172,11 @@ function renderAll() {
   renderBudgetsPage();
   renderGoalsPage();
   renderNetWorthPage();
+  renderRecurring();
+}
+
+function renderRecurring() {
+  renderRecurringList(document.getElementById('recurring-list'), state.recurring, getCategories());
 }
 
 function renderDashboard() {
@@ -286,6 +304,8 @@ function wireModals() {
   wireCategoryList();
   wireImportExport();
   wireRowDeletes();
+  wireRecurringModal();
+  wireRecurringList();
 
   document.querySelectorAll('[data-open-modal]').forEach((btn) => {
     btn.addEventListener('click', () => openModal(btn.dataset.openModal));
@@ -353,6 +373,65 @@ function wireBudgetModal() {
     } catch (err) {
       toast(err.message || 'Could not save budget');
     }
+  });
+}
+
+function wireRecurringModal() {
+  const form = document.getElementById('recurring-form');
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    try {
+      await addRecurring(currentUser.id, {
+        type: fd.get('type'),
+        amount: parseFloat(fd.get('amount')),
+        category_id: fd.get('category_id'),
+        payment_method: fd.get('payment_method'),
+        description: fd.get('description'),
+        frequency: fd.get('frequency'),
+        next_run: fd.get('next_run') || new Date().toISOString().slice(0, 10),
+      });
+      form.reset();
+      document.getElementById('modal-recurring')?.classList.remove('open');
+      state.recurring = await fetchRecurring(currentUser.id);
+      renderRecurring();
+    } catch (err) {
+      toast(err.message || 'Could not save recurring transaction');
+    }
+  });
+}
+
+function wireRecurringList() {
+  document.getElementById('recurring-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.row-del');
+    if (!btn || !confirm('Delete this recurring transaction?')) return;
+    try {
+      await deleteRecurring(btn.dataset.del);
+      state.recurring = await fetchRecurring(currentUser.id);
+      renderRecurring();
+    } catch (err) {
+      toast(err.message || 'Could not delete');
+    }
+  });
+}
+
+function wireCategorySuggest() {
+  const desc = document.querySelector('#tx-form [name="description"]');
+  const typeSel = document.querySelector('#tx-form [name="type"]');
+  const catSel = document.querySelector('#tx-form [name="category_id"]');
+  if (!desc || !typeSel || !catSel) return;
+
+  const apply = debounce(() => {
+    const suggested = suggestCategoryId(desc.value, typeSel.value, getCategories(), state.transactions);
+    if (catSel.value === '' || catSel.value === (suggested || '')) {
+      if (suggested) catSel.value = suggested;
+    }
+  }, 300);
+
+  desc.addEventListener('input', apply);
+  typeSel.addEventListener('change', () => {
+    catSel.value = '';
+    if (desc.value.trim()) apply();
   });
 }
 
@@ -551,6 +630,40 @@ function wireImportExport() {
       renderAll();
     } catch (err) {
       toast(err.message || 'Import failed');
+    }
+  });
+
+  document.getElementById('gcash-import-input')?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const { rows, skipped, income, expense } = parseGcashCsv(text, {
+        categories: getCategories(),
+        transactions: state.transactions,
+      });
+      if (!rows.length) {
+        toast(skipped ? `No new rows — ${skipped} already logged or unreadable` : 'No rows found in this GCash export');
+        return;
+      }
+      const cats = new Map(getCategories().map((c) => [c.name.toLowerCase(), c]));
+      await bulkAddTransactions(currentUser.id, rows.map((r) => ({
+        type: r.type,
+        amount: r.amount,
+        category_id: r.categoryName ? (cats.get(r.categoryName.toLowerCase())?.id ?? null) : null,
+        payment_method: 'gcash',
+        description: r.description,
+        notes: r.notes,
+        occurred_on: r.occurred_on,
+        source: 'import',
+      })));
+      toast(`Imported ${rows.length} (${expense} expense / ${income} income)${skipped ? ` · ${skipped} skipped` : ''}`);
+      e.target.value = '';
+      await refreshAllData();
+      renderAll();
+    } catch (err) {
+      toast(err.message || 'GCash import failed');
+      e.target.value = '';
     }
   });
 }

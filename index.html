@@ -182,6 +182,9 @@
         <label class="btn btn-ghost btn-sm" style="margin:0;">
           Import file <input type="file" id="import-file-input" accept=".csv,.xlsx,.xls,.json" class="hidden" />
         </label>
+        <label class="btn btn-ghost btn-sm" style="margin:0;">
+          Import GCash CSV <input type="file" id="gcash-import-input" accept=".csv" class="hidden" />
+        </label>
       </div>
     </section>
 
@@ -191,6 +194,8 @@
       <div class="card" id="budget-list"></div>
       <div class="section-head"><h3>Budget Breakdown</h3></div>
       <div class="card"><div style="height:220px;"><canvas id="chart-budget-breakdown"></canvas></div></div>
+      <div class="section-head"><h3>Recurring Transactions</h3><button class="btn btn-primary btn-sm" data-open-modal="modal-recurring">+ Add Recurring</button></div>
+      <div class="card" id="recurring-list"></div>
     </section>
 
     <!-- ---------------- GOALS ---------------- -->
@@ -280,6 +285,38 @@
       <div class="field"><label>Category</label><select name="category_id" class="category-select" data-filter-type="expense" required></select></div>
       <div class="field"><label>Monthly Amount</label><input type="number" step="0.01" name="amount" required /></div>
       <button class="btn btn-primary btn-block" type="submit">Save Budget</button>
+    </form>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-recurring">
+  <div class="modal">
+    <div class="modal-head"><h3>Add Recurring Transaction</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <form id="recurring-form">
+      <div class="field-row">
+        <div class="field"><label>Type</label><select name="type" required><option value="expense">Expense</option><option value="income">Income</option></select></div>
+        <div class="field"><label>Amount</label><input type="number" step="0.01" name="amount" required /></div>
+      </div>
+      <div class="field"><label>Category</label><select name="category_id" class="category-select" required></select></div>
+      <div class="field-row">
+        <div class="field"><label>Frequency</label>
+          <select name="frequency" required>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly" selected>Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+        <div class="field"><label>Payment Method</label>
+          <select name="payment_method">
+            <option value="cash">Cash</option><option value="gcash">GCash</option><option value="bank">Bank</option>
+            <option value="credit_card">Credit Card</option><option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Description</label><input type="text" name="description" placeholder="e.g. Rent" /></div>
+      <div class="field"><label>Next due date</label><input type="date" name="next_run" required /></div>
+      <button class="btn btn-primary btn-block" type="submit">Save Recurring</button>
     </form>
   </div>
 </div>
