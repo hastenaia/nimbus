@@ -1,5 +1,9 @@
 // CSV/JSON handled natively. Excel (.xlsx) uses SheetJS (window.XLSX,
-// loaded via CDN in index.html) for both reading and writing.
+// loaded lazily via loadScript) for both reading and writing.
+
+import { loadScript } from './utils.js';
+
+const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
 
 export function exportToJson(transactions) {
   const blob = new Blob([JSON.stringify(transactions, null, 2)], { type: 'application/json' });
@@ -23,7 +27,8 @@ export function exportToCsv(transactions) {
   downloadBlob(blob, `nimbus-transactions-${Date.now()}.csv`);
 }
 
-export function exportToExcel(transactions) {
+export async function exportToExcel(transactions) {
+  await loadScript(XLSX_URL);
   if (!window.XLSX) throw new Error('SheetJS (XLSX) not loaded');
   const rows = transactions.map((t) => ({
     Date: t.occurred_on,
@@ -113,6 +118,7 @@ function parseCsv(text) {
 }
 
 async function parseExcelFile(file) {
+  await loadScript(XLSX_URL);
   if (!window.XLSX) throw new Error('SheetJS (XLSX) not loaded');
   const buffer = await file.arrayBuffer();
   const wb = window.XLSX.read(buffer, { type: 'array' });

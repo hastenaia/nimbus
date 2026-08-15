@@ -113,3 +113,19 @@ export function groupBy(arr, keyFn) {
 export function sum(arr, sel = (x) => x) {
   return arr.reduce((s, x) => s + Number(sel(x) || 0), 0);
 }
+
+const loadedScripts = new Set();
+
+/** Loads a classic <script> (e.g. a CDN global) on demand, cached per URL. */
+export function loadScript(src) {
+  if (loadedScripts.has(src)) return Promise.resolve();
+  loadedScripts.add(src);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.body.appendChild(s);
+  });
+}

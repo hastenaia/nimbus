@@ -4,7 +4,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <meta name="theme-color" content="#0B0D12" />
+<meta name="description" content="Nimbus Finance — track income, expenses, budgets, savings goals, and net worth in one place." />
 <title>Nimbus Finance</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Nimbus Finance" />
+<meta property="og:description" content="Nimbus Finance — track income, expenses, budgets, savings goals, and net worth in one place." />
+<meta property="og:url" content="https://hastenaia.github.io/nimbus/" />
+<meta name="twitter:card" content="summary" />
 <link rel="stylesheet" href="./css/main.css" />
 </head>
 <body>
@@ -45,6 +52,10 @@
 
 <!-- ============ MAIN APP ============ -->
 <div id="app" class="hidden">
+  <div id="app-loading" class="app-loading hidden">
+    <div class="spinner"></div>
+    <p>Loading your dashboard…</p>
+  </div>
   <div class="sidebar">
     <div class="brand"><span class="brand-mark"></span> Nimbus</div>
     <button class="nav-item active" data-route="dashboard"><span class="ico">🏠</span> Dashboard</button>
@@ -343,8 +354,6 @@
 <!-- ============ CDN LIBS ============ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <script>
   // Simple auth tab switcher (kept inline — tiny, purely presentational)

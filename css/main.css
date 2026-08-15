@@ -406,6 +406,13 @@ label { font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bott
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.app-loading {
+  position: fixed; inset: 0; z-index: 300;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: var(--bg); color: var(--text-dim); font-size: 14px;
+}
+.app-loading .spinner { width: 28px; height: 28px; border-width: 3px; }
+
 /* ============ AI Financial Coach ============ */
 .coach-headline { font-weight: 600; font-size: 14.5px; margin-bottom: 12px; }
 .coach-headline.ok { color: var(--growth); }

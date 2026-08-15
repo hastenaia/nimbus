@@ -1,4 +1,4 @@
-// Uses Tesseract.js v5 (window.Tesseract, loaded via CDN in index.html).
+// Uses Tesseract.js v5 (window.Tesseract, loaded lazily via loadScript).
 // Parses a GCash-style receipt screenshot and extracts likely fields.
 // This is heuristic text parsing over OCR output — always shown to the
 // user for confirmation/correction before anything is saved.
@@ -6,8 +6,17 @@
 // A single worker is created lazily and reused for every scan, so the
 // language data / wasm core is only downloaded once instead of per image.
 
+import { loadScript } from './utils.js';
+
+const TESSERACT_URL = 'https://unpkg.com/tesseract.js@5/dist/tesseract.min.js';
+
 let worker = null;
 let progressCb = null;
+
+/** Starts the ~2MB Tesseract download early (e.g. when the OCR modal opens). */
+export function preloadOcr() {
+  loadScript(TESSERACT_URL).catch(() => {});
+}
 
 async function getWorker() {
   if (worker) return worker;
@@ -20,6 +29,7 @@ async function getWorker() {
 }
 
 export async function runOcr(file, onProgress) {
+  await loadScript(TESSERACT_URL);
   if (!window.Tesseract) throw new Error('Tesseract.js not loaded');
 
   progressCb = onProgress || null;

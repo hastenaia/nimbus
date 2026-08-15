@@ -14,7 +14,7 @@ import {
   renderIncomeVsExpense, renderCategoryPie, renderSavingsGrowth, renderCashFlow,
   renderBudgetBreakdown, renderGrowthTimeline, renderHealthRings,
 } from './charts.js';
-import { runOcr } from './ocr.js';
+import { runOcr, preloadOcr } from './ocr.js';
 import { exportToJson, exportToCsv, exportToExcel, parseImportFile } from './importExport.js';
 import { financialGrowthReport, categoryReport, renderReportTable } from './reports.js';
 import {
@@ -111,16 +111,21 @@ async function doShowApp() {
 
   document.getElementById('auth-screen')?.classList.add('hidden');
   document.getElementById('app')?.classList.remove('hidden');
+  document.getElementById('app-loading')?.classList.remove('hidden');
 
   const nameEl = document.getElementById('user-greeting-name');
   if (nameEl) nameEl.textContent = currentUser.user_metadata?.full_name?.split(' ')[0] || 'there';
 
-  await loadCategories(currentUser.id);
-  await refreshAllData();
-  await initQuoteCard(currentUser);
-  checkMonthStart();
-  renderAll();
-  renderCategories();
+  try {
+    await loadCategories(currentUser.id);
+    await refreshAllData();
+    await initQuoteCard(currentUser);
+    checkMonthStart();
+    renderAll();
+    renderCategories();
+  } finally {
+    document.getElementById('app-loading')?.classList.add('hidden');
+  }
 }
 
 function checkMonthStart() {
@@ -292,6 +297,7 @@ function wireModals() {
 
 function openModal(id) {
   populateCategorySelects();
+  if (id === 'modal-ocr') preloadOcr();
   document.getElementById(id)?.classList.add('open');
 }
 
@@ -510,9 +516,9 @@ function wireCategoryList() {
 function wireImportExport() {
   document.getElementById('export-json-btn')?.addEventListener('click', () => exportToJson(state.transactions));
   document.getElementById('export-csv-btn')?.addEventListener('click', () => exportToCsv(state.transactions));
-  document.getElementById('export-excel-btn')?.addEventListener('click', () => {
+  document.getElementById('export-excel-btn')?.addEventListener('click', async () => {
     try {
-      exportToExcel(state.transactions);
+      await exportToExcel(state.transactions);
     } catch (err) {
       toast(err.message);
     }
