@@ -16,3 +16,8 @@ export const DEFAULT_CURRENCY = "PHP";
 
 // Quote rotation interval while the app stays open (ms). 45 min default.
 export const QUOTE_ROTATE_MS = 45 * 60 * 1000;
+
+// AI Coach — keys never in client. Enable by deploying supabase/functions/ai-coach with OPENAI_API_KEY.
+// Client will try ${SUPABASE_URL}/functions/v1/ai-coach; if 503 (not configured) it falls back locally.
+export const AI_COACH_ENABLED = true;
+export const AI_COACH_ENDPOINT = `${SUPABASE_URL}/functions/v1/ai-coach`;

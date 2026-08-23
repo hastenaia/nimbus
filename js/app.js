@@ -9,7 +9,8 @@ import { fetchBudgets, upsertBudget, deleteBudget, computeBudgetProgress, overal
 import { createCategory, deleteCategory } from './categories.js';
 import { fetchGoals, createGoal, contributeToGoal, deleteGoal, renderGoalList } from './goals.js';
 import { fetchNetWorthItems, upsertNetWorthItem, deleteNetWorthItem, computeNetWorth, renderNetWorthList, fetchNetWorthSnapshots, ensureTodaySnapshot } from './netWorth.js';
-import { generateInsights, renderCoachCard, computeHeadline, answerCoachQuestion } from './coach.js';
+import { generateInsights, renderCoachCard, computeHeadline, answerCoachQuestion, toTypedInsights } from './coach.js';
+import { buildVerifiedMetrics, getAIInsights } from './aiCoach.js';
 import {
   renderIncomeVsExpense, renderCategoryPie, renderSavingsGrowth, renderCashFlow,
   renderBudgetBreakdown, renderGrowthTimeline, renderHealthRings, renderMoneyTrend, renderForecastMini,
@@ -241,14 +242,59 @@ function renderDashboard() {
   renderAnalyticsInsights(analytics);
   renderSavingsRateTrend('chart-savings-rate-trend', analytics.savingsRateTrend);
 
-  const insights = generateInsights({ ...coachContext(), forecast, safeToSpend });
-  renderCoachCard(document.getElementById('coach-card-body'), insights);
-  const headline = computeHeadline(insights);
+  // Local rule-based insights (instant fallback, never fabricated)
+  const localInsightsRaw = generateInsights({ ...coachContext(), forecast, safeToSpend });
+  const localInsights = toTypedInsights(localInsightsRaw, { summary: s, transactions: state.transactions });
+  renderCoachCard(document.getElementById('coach-card-body'), localInsights, { showConfidence: true });
+  let headline = computeHeadline(localInsights);
   const headlineEl = document.getElementById('coach-headline');
   if (headlineEl) {
     headlineEl.textContent = headline.text;
     headlineEl.className = `coach-headline ${headline.cls}`;
   }
+  // Disclaimer (safety)
+  const disclaimerEl = document.getElementById('coach-disclaimer');
+  if (disclaimerEl) disclaimerEl.style.display = 'block';
+
+  // Phase 9: Try server-side AI with verified metrics — deduplicated, falls back to local
+  try {
+    const verified = buildVerifiedMetrics({
+      summary: s,
+      currentMonthKey: thisMonth,
+      transactions: state.transactions,
+      budgetsProgress: state.budgetsProgress,
+      goals: state.goals,
+      categories: getCategories(),
+      netWorthItems: state.netWorthItems,
+      forecast,
+      safeToSpend,
+      analytics,
+      healthScore,
+      recurring: state.recurring,
+    });
+    // Fire-and-forget AI, but deduped inside aiCoach.js
+    getAIInsights(verified).then((aiRes) => {
+      if (!aiRes || aiRes.fallback || !aiRes.insights || !aiRes.insights.length) return; // keep local fallback
+      // AI insights are already grounded in verified metrics server-side; render with same card
+      const mapped = aiRes.insights.map((ins, idx) => ({
+        id: `ai-${idx}`,
+        group: ins.type || 'ai',
+        insightType: ins.type,
+        icon: ins.icon || '🤖',
+        text: ins.text,
+        actionableText: ins.action,
+        priority: 2,
+        confidence: ins.confidence || 'high',
+      }));
+      const typedAI = toTypedInsights(mapped, { summary: s, transactions: state.transactions });
+      renderCoachCard(document.getElementById('coach-card-body'), typedAI, { showConfidence: true });
+      headline = computeHeadline(typedAI);
+      if (headlineEl) {
+        headlineEl.textContent = `AI · ${headline.text}`;
+        headlineEl.className = `coach-headline ${headline.cls}`;
+      }
+    }).catch(() => { /* keep fallback */ });
+  } catch (_) { /* keep fallback */ }
 
   renderIncomeVsExpense('chart-income-expense', s);
   renderCategoryPie('chart-category-pie', thisM.categories, getCategories());

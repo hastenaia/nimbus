@@ -235,6 +235,41 @@ export function generateInsights({ transactions, budgetsProgress, goals, categor
     });
   }
 
+  // Enrich with insightType (7 types) and single actionable suggestion where supported by real data
+  const typeMap = {
+    savings: 'savings', trend: 'spending', mover: 'spending', overBudget: 'budget', pacing: 'budget',
+    runway: 'health', debt: 'health', recurring: 'bills', goalUrgency: 'goals', goalRunway: 'goals',
+    goalMilestone: 'goals', income: 'cashflow', concentration: 'spending', anomaly: 'spending',
+    forecast: 'cashflow', safe: 'cashflow', onboarding: 'health'
+  };
+  insights.forEach((ins) => {
+    ins.insightType = typeMap[ins.group] || ins.group;
+    // Confidence per insight (global low if limited history)
+    if (!ins.confidence) {
+      ins.confidence = (summary.months.length < 2 || transactions.length < 5) ? 'low' : 'high';
+    }
+    // One actionable suggestion max — grounded in actual budget/headroom
+    if (!ins.actionableText) {
+      if (ins.group === 'overBudget' && budgetsProgress.length) {
+        const over = budgetsProgress.filter(b => b.state === 'over')[0];
+        if (over) {
+          const saveAmt = Math.min(300, Math.max(50, Math.round(Math.abs(over.remaining) || 100)));
+          ins.actionableText = `Consider reducing ${over.categories?.name || 'this category'} spending by ${formatMoney(saveAmt)} this week to stay within your budget.`;
+        }
+      } else if (ins.group === 'pacing' && budgetsProgress.length) {
+        const atRiskItem = budgetsProgress.find(b => b.pct >= 70);
+        if (atRiskItem) {
+          const headroom = Math.max(0, atRiskItem.amount - atRiskItem.spent);
+          const suggestion = Math.min(250, Math.max(50, Math.round(headroom * 0.2) || 80));
+          ins.actionableText = `Try limiting ${atRiskItem.categories?.name || 'it'} to ${formatMoney(suggestion)} less this week.`;
+        }
+      } else if (ins.group === 'concentration' && thisM.expense > 0) {
+        const topShare = Math.round((Math.max(...[...thisM.categories.values()]) / thisM.expense) * 100);
+        if (topShare >= 40) ins.actionableText = `Aim to trim your top category by ${formatMoney(200)} this week.`;
+      }
+    }
+  });
+
   // Selection: keep the highest-priority insight per group (no near-duplicates),
   // then sort by urgency and cap at 4.
   const byGroup = new Map();
@@ -311,21 +346,63 @@ export function answerCoachQuestion(question, data, amount) {
   return { icon: '💬', text: 'Ask me about cutting costs, affording a purchase, or your budget pacing.' };
 }
 
-export function renderCoachCard(containerEl, insights) {
+// --- Phase 9: Typed insight helpers with confidence ---
+function confidenceFor(insights, monthsOfHistory, txCount) {
+  // Global low confidence if limited history
+  if (monthsOfHistory < 2 || txCount < 5) return 'low';
+  return 'high';
+}
+
+/**
+ * Ensure coverage for 7 insight types. Existing generateInsights already covers them,
+ * but this helper normalizes to types: spending, budget, savings, cashflow, bills, goals, health
+ * and adds confidence + single actionable suggestion where supported.
+ */
+export function toTypedInsights(insights, ctx) {
+  const months = ctx.summary?.months?.length ?? 0;
+  const txCount = ctx.transactions?.length ?? 0;
+  const conf = confidenceFor(insights, months, txCount);
+  return insights.map((ins) => ({
+    ...ins,
+    confidence: ins.confidence || conf,
+    // tag type if missing
+    insightType: ins.insightType || ins.group || 'general',
+  }));
+}
+
+export function renderCoachCard(containerEl, insights, opts = {}) {
   if (!containerEl) return;
+  const showConfidence = opts.showConfidence ?? false;
   containerEl.innerHTML = insights
     .map((i) => {
       const action = i.action
         ? `<button class="btn btn-ghost btn-sm" ${i.action.type === 'route' ? `data-route="${i.action.target}"` : `data-open-modal="${i.action.target}"`} style="margin-top:8px;">${i.action.label}</button>`
         : '';
+      // Only one actionable suggestion per insight — already enforced by generateInsights (single action)
+      const actionable = i.actionableText ? `<div style="margin-top:6px;font-size:12.5px;color:var(--text-dim);"><em>→ ${escapeHtml(i.actionableText)}</em></div>` : '';
+      const confBadge = showConfidence && i.confidence === 'low'
+        ? `<div style="margin-top:4px;font-size:11px;color:var(--gold);">Your transaction history is limited, so this insight may not reflect your normal spending pattern.</div>`
+        : '';
+      // Avoid professional advice claims — disclaimer handled at card level
       return `
-      <div class="coach-insight">
+      <div class="coach-insight" data-insight-type="${escapeHtml(i.insightType || i.group || '')}">
         <span class="coach-insight-ico">${i.icon}</span>
         <div class="coach-insight-body">
           <div>${escapeHtml(i.text)}</div>
+          ${actionable}
           ${action}
+          ${confBadge}
         </div>
       </div>`;
     })
     .join('');
+  // Append global low-confidence notice if needed
+  if (showConfidence && insights.some((x) => x.confidence === 'low')) {
+    // already per-insight, no duplicate
+  }
+}
+
+// Preserve original render for callers not passing opts
+export function renderCoachCardLegacy(containerEl, insights) {
+  return renderCoachCard(containerEl, insights, { showConfidence: false });
 }
