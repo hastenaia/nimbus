@@ -8,7 +8,7 @@ import {
 import { fetchBudgets, upsertBudget, deleteBudget, computeBudgetProgress, overallBudgetAdherence, renderBudgetList } from './budgets.js';
 import { createCategory, deleteCategory } from './categories.js';
 import { fetchGoals, createGoal, contributeToGoal, deleteGoal, renderGoalList } from './goals.js';
-import { fetchNetWorthItems, upsertNetWorthItem, deleteNetWorthItem, computeNetWorth, renderNetWorthList } from './netWorth.js';
+import { fetchNetWorthItems, upsertNetWorthItem, deleteNetWorthItem, computeNetWorth, renderNetWorthList, fetchNetWorthSnapshots, ensureTodaySnapshot } from './netWorth.js';
 import { generateInsights, renderCoachCard, computeHeadline, answerCoachQuestion } from './coach.js';
 import {
   renderIncomeVsExpense, renderCategoryPie, renderSavingsGrowth, renderCashFlow,
@@ -39,6 +39,7 @@ let state = {
   budgetsProgress: [],
   goals: [],
   netWorthItems: [],
+  netWorthSnapshots: [],
   recurring: [],
   moneyTrendRange: localStorage.getItem('nimbus_trend_range') || '30D',
 };
@@ -156,12 +157,13 @@ function checkMonthStart() {
 }
 
 async function refreshAllData() {
-  const [tx, budgets, goals, netWorth, recurring] = await Promise.all([
+  const [tx, budgets, goals, netWorth, recurring, snapshots] = await Promise.all([
     fetchTransactions(currentUser.id),
     fetchBudgets(currentUser.id, monthKey()),
     fetchGoals(currentUser.id),
     fetchNetWorthItems(currentUser.id),
     fetchRecurring(currentUser.id),
+    fetchNetWorthSnapshots(currentUser.id),
   ]);
   state.transactions = tx;
   state.summary = summarizeTransactions(tx);
@@ -169,6 +171,7 @@ async function refreshAllData() {
   state.budgetsProgress = computeBudgetProgress(budgets, monthSpend);
   state.goals = goals;
   state.netWorthItems = netWorth;
+  state.netWorthSnapshots = snapshots || [];
   state.recurring = recurring;
 }
 
@@ -438,9 +441,41 @@ function renderNetWorthPage() {
   setText('networth-assets', formatMoney(assets));
   setText('networth-liabilities', formatMoney(liabilities));
   setText('networth-total', formatMoney(netWorth));
-  const growth = financialGrowthReport(state.summary, state.netWorthItems);
-  renderGrowthTimeline('chart-growth-timeline', growth.trend);
+  // Phase 8: prefer persistent snapshots; fallback to derived only if no snapshots yet (no fake history)
+  let trend = [];
+  if (state.netWorthSnapshots && state.netWorthSnapshots.length) {
+    trend = state.netWorthSnapshots.map((s) => ({
+      label: s.snapshot_date,
+      value: Number(s.net_worth),
+      assets: Number(s.assets),
+      liabilities: Number(s.liabilities),
+    }));
+  } else {
+    const growth = financialGrowthReport(state.summary, state.netWorthItems);
+    trend = growth.trend;
+    // If still empty/single point, Growth Timeline will show inception message via charts.js
+  }
+  renderGrowthTimeline('chart-growth-timeline', trend);
   renderCashFlow('chart-cash-flow', state.summary);
+  // Show inception notice when no history (supplements chart empty state)
+  const noticeEl = document.getElementById('networth-inception-notice');
+  if (noticeEl) {
+    if (!state.netWorthSnapshots.length) {
+      const first = state.netWorthSnapshots[0] || null;
+      const dateStr = first ? first.snapshot_date : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      if ((trend.length < 2 && state.netWorthSnapshots.length === 0) || state.summary.months.length < 2) {
+        noticeEl.textContent = `Historical tracking begins on ${dateStr} — no fake history. Your first snapshot will be created when you add assets/liabilities.`;
+        noticeEl.style.display = 'block';
+      } else {
+        noticeEl.style.display = 'none';
+      }
+    } else if (state.netWorthSnapshots.length === 1) {
+      noticeEl.textContent = `Historical tracking begins on ${state.netWorthSnapshots[0].snapshot_date}. Add another day’s snapshot to see growth.`;
+      noticeEl.style.display = 'block';
+    } else {
+      noticeEl.style.display = 'none';
+    }
+  }
 }
 
 function renderReports() {
@@ -671,11 +706,16 @@ function wireNetWorthModal() {
     e.preventDefault();
     const fd = new FormData(form);
     try {
-      await upsertNetWorthItem(currentUser.id, {
+      const saved = await upsertNetWorthItem(currentUser.id, {
         kind: fd.get('kind'),
         name: fd.get('name'),
         value: parseFloat(fd.get('value')),
       });
+      // Phase 8: snapshot today's calculated state after mutation (upsert per user+date, no duplicates)
+      try {
+        const freshItems = await fetchNetWorthItems(currentUser.id);
+        await ensureTodaySnapshot(currentUser.id, freshItems);
+      } catch (snapErr) { console.warn('snapshot failed', snapErr); }
       form.reset();
       document.getElementById('modal-networth')?.classList.remove('open');
       await refreshAllData();
@@ -867,6 +907,13 @@ function wireRowDeletes() {
       if (!btn || !confirm('Delete this item?')) return;
       try {
         await del(btn.dataset.del);
+        // Phase 8: after net worth delete, snapshot updated state (no duplicate per date)
+        if (id === 'networth-list') {
+          try {
+            const fresh = await fetchNetWorthItems(currentUser.id);
+            await ensureTodaySnapshot(currentUser.id, fresh);
+          } catch (snapErr) { console.warn('snapshot failed', snapErr); }
+        }
         await refreshAllData();
         renderAll();
       } catch (err) {

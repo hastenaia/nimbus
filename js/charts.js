@@ -214,35 +214,71 @@ export function renderBudgetBreakdown(canvasId, budgetProgress) {
 export function renderGrowthTimeline(canvasId, netWorthHistory) {
   const c = themeColors();
   const hist = netWorthHistory || [];
-  // Derived-only: trend = cumulative net from transactions. Without snapshots history is thin.
-  // LIMITATION: when <2 months, we cannot reconstruct past net worth — show empty state, not fake points.
+  // Phase 8: prefers persistent snapshots; falls back to derived only if no snapshots.
+  // If hist <2, show appropriate empty state with inception date if available.
   if (hist.length < 2) {
     destroyChart(canvasId);
-    toggleEmpty(canvasId, true, 'Not enough history to show net-worth growth yet. Your historical net-worth tracking begins now — add assets/liabilities and keep logging transactions.');
+    let msg = 'Not enough history to show net-worth growth yet. Your historical net-worth tracking begins now — add assets/liabilities and keep logging transactions.';
+    if (hist.length === 1 && hist[0].label) {
+      msg = `Historical tracking begins on ${hist[0].label}. Add another snapshot to see growth.`;
+    } else if (hist.length === 0) {
+      // Check if we have a single inception date elsewhere — caller may pass empty; generic message stands.
+      msg = 'No net-worth history yet. Historical tracking begins on ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' — add assets/liabilities to create your first snapshot.';
+    }
+    // If caller provided 1 point, show that point's date as inception
+    toggleEmpty(canvasId, true, msg);
     return;
   }
   toggleEmpty(canvasId, false);
   const values = hist.map((p) => p.value);
   const hasVariance = values.some((v, i) => i > 0 && v !== values[i - 1]);
+  // Multi-dataset: Net Worth + Assets + Liabilities (all from snapshots)
+  const hasAssetsLiabilities = hist.some((p) => p.assets != null || p.liabilities != null);
+  const datasets = [
+    {
+      label: 'Net Worth',
+      data: values,
+      borderColor: c.signal,
+      backgroundColor: c.signal + '22',
+      fill: true,
+      tension: 0.35,
+      pointRadius: hasVariance ? 0 : 3,
+      pointBackgroundColor: c.signal,
+      borderWidth: 2,
+    },
+  ];
+  if (hasAssetsLiabilities) {
+    datasets.push({
+      label: 'Assets',
+      data: hist.map((p) => p.assets ?? 0),
+      borderColor: c.growth,
+      backgroundColor: 'transparent',
+      tension: 0.35,
+      pointRadius: 0,
+      borderWidth: 1.5,
+      borderDash: [4, 4],
+      fill: false,
+    });
+    datasets.push({
+      label: 'Liabilities',
+      data: hist.map((p) => p.liabilities ?? 0),
+      borderColor: c.coral,
+      backgroundColor: 'transparent',
+      tension: 0.35,
+      pointRadius: 0,
+      borderWidth: 1.5,
+      borderDash: [4, 4],
+      fill: false,
+    });
+  }
   render(canvasId, {
     type: 'line',
     data: {
       labels: hist.map((p) => p.label),
-      datasets: [
-        {
-          label: 'Net Worth',
-          data: values,
-          borderColor: c.signal,
-          backgroundColor: c.signal + '22',
-          fill: true,
-          tension: 0.35,
-          pointRadius: hasVariance ? 0 : 3,
-          pointBackgroundColor: c.signal,
-        },
-      ],
+      datasets,
     },
     options: baseOptions({
-      tooltip: { callbacks: { label: (ctx) => ` Net Worth: ${formatPeso(ctx.parsed.y)}` } },
+      tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${formatPeso(ctx.parsed.y)}` } },
     }),
   });
 }

@@ -1,5 +1,5 @@
 import { getSupabase } from './supabaseClient.js';
-import { formatMoney, sum, toast } from './utils.js';
+import { formatMoney, sum, toast, isoLocal } from './utils.js';
 
 export async function fetchNetWorthItems(userId) {
   const supabase = getSupabase();
@@ -34,6 +34,65 @@ export function computeNetWorth(items) {
   const assets = sum(items.filter((i) => i.kind === 'asset'), (i) => i.value);
   const liabilities = sum(items.filter((i) => i.kind === 'liability'), (i) => i.value);
   return { assets, liabilities, netWorth: assets - liabilities };
+}
+
+// ------------------------------------------------------------
+// Snapshots — persistent history (Phase 8)
+// ------------------------------------------------------------
+export async function fetchNetWorthSnapshots(userId) {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('net_worth_snapshots')
+    .select('*')
+    .eq('user_id', userId)
+    .order('snapshot_date', { ascending: true });
+  if (error) {
+    // Table may not exist yet before migration is applied — fail softly, no fake data.
+    if (error.code === '42P01') return [];
+    console.error(error);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Create or update a snapshot for a given date (unique per user+date).
+ * Uses actual calculated assets/liabilities — never fabricates.
+ * Safest flow: called after net_worth_items mutation, once per date via upsert.
+ */
+export async function upsertNetWorthSnapshot(userId, { snapshot_date, assets, liabilities }) {
+  const supabase = getSupabase();
+  const date = snapshot_date || isoLocal(new Date());
+  const payload = {
+    user_id: userId,
+    snapshot_date: date,
+    assets: Number(assets) || 0,
+    liabilities: Number(liabilities) || 0,
+    // net_worth auto-set by trigger, but include for clarity
+    net_worth: (Number(assets) || 0) - (Number(liabilities) || 0),
+  };
+  const { data, error } = await supabase
+    .from('net_worth_snapshots')
+    .upsert(payload, { onConflict: 'user_id,snapshot_date' })
+    .select()
+    .single();
+  if (error) {
+    if (error.code === '42P01') {
+      console.warn('net_worth_snapshots not yet migrated');
+      return null;
+    }
+    throw error;
+  }
+  return data;
+}
+
+/**
+ * Ensure a snapshot exists for today representing current calculated state.
+ * Avoids duplicates: upserts on user+snapshot_date unique constraint.
+ */
+export async function ensureTodaySnapshot(userId, items) {
+  const { assets, liabilities } = computeNetWorth(items);
+  return upsertNetWorthSnapshot(userId, { snapshot_date: isoLocal(new Date()), assets, liabilities });
 }
 
 export function renderNetWorthList(containerEl, items) {
