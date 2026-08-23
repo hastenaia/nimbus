@@ -14,13 +14,7 @@ export function formatMoney(amount, currency = DEFAULT_CURRENCY) {
 }
 
 export function formatDate(d, opts = { month: 'short', day: 'numeric' }) {
-  const dt = typeof d === 'string' ? parseLocalISO(String(d).slice(0, 10)) || new Date(d) : new Date(d);
-  if (isNaN(dt)) return String(d);
-  try {
-    return dt.toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', ...opts });
-  } catch {
-    return dt.toLocaleDateString('en-US', opts);
-  }
+  return new Date(d).toLocaleDateString('en-US', opts);
 }
 
 // Local-date helpers — do NOT use new Date("YYYY-MM-DD") for financial dates (UTC trap for PH UTC+8).

@@ -147,7 +147,7 @@ function escapeHtml(s) {
 export function renderRecurringList(containerEl, items, categories) {
   if (!containerEl) return;
   if (!items.length) {
-    containerEl.innerHTML = `<div class="empty-state"><div class="ico">🔁</div><div style="font-weight:600;margin-bottom:4px;">No recurring transactions yet</div><div style="font-size:13px;margin-bottom:12px;">Add a bill or subscription to automate tracking.</div><button class="btn btn-primary btn-sm" data-open-modal="modal-recurring">+ Add Recurring</button></div>`;
+    containerEl.innerHTML = `<div class="empty-state"><div class="ico">🔁</div>No recurring transactions yet.<br/>Add one above and it will be logged automatically when due.</div>`;
     return;
   }
   const catById = new Map((categories || []).map((c) => [c.id, c]));

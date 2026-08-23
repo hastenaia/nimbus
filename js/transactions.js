@@ -125,12 +125,7 @@ export function setFilters(partial) {
 export function renderTransactionList(containerEl, list) {
   if (!containerEl) return;
   if (!list.length) {
-    const isFiltered = activeFilters.search !== '' || activeFilters.category !== 'all' || activeFilters.paymentMethod !== 'all' || activeFilters.type !== 'all';
-    if (isFiltered) {
-      containerEl.innerHTML = `<div class="empty-state"><div class="ico">🔍</div><div style="font-weight:600;margin-bottom:4px;">No matching transactions</div><div style="font-size:13px;margin-bottom:12px;">Try adjusting your search or filters.</div><button class="btn btn-ghost btn-sm" onclick="document.getElementById('tx-search-input').value=''; document.getElementById('tx-search-input').dispatchEvent(new Event('input'))">Clear filters</button></div>`;
-    } else {
-      containerEl.innerHTML = `<div class="empty-state"><div class="ico">🧾</div><div style="font-weight:600;margin-bottom:4px;">No transactions yet</div><div style="font-size:13px;margin-bottom:12px;">Add your first income or expense to get started.</div><button class="btn btn-primary btn-sm" data-open-modal="modal-tx">+ Add Transaction</button></div>`;
-    }
+    containerEl.innerHTML = `<div class="empty-state"><div class="ico">🧾</div>No transactions yet.<br/>Tap + to add your first one.</div>`;
     return;
   }
   containerEl.innerHTML = list

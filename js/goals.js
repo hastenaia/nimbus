@@ -88,7 +88,7 @@ function fireConfetti() {
 export function renderGoalList(containerEl, goals) {
   if (!containerEl) return;
   if (!goals.length) {
-    containerEl.innerHTML = `<div class="empty-state"><div class="ico">🎯</div><div style="font-weight:600;margin-bottom:4px;">No savings goals yet</div><div style="font-size:13px;margin-bottom:12px;">Create a goal to track progress and stay motivated.</div><button class="btn btn-primary btn-sm" data-open-modal="modal-goal">+ Create Goal</button></div>`;
+    containerEl.innerHTML = `<div class="empty-state"><div class="ico">🎯</div>No savings goals yet.</div>`;
     return;
   }
   containerEl.innerHTML = goals

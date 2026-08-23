@@ -52,7 +52,7 @@
 
 <!-- ============ MAIN APP ============ -->
 <div id="app" class="hidden">
-  <div id="app-loading" class="app-loading hidden" role="status" aria-live="polite" aria-busy="true">
+  <div id="app-loading" class="app-loading hidden">
     <div class="spinner"></div>
     <p>Loading your dashboard…</p>
   </div>
@@ -309,9 +309,9 @@
 <div id="toast-stack"></div>
 
 <!-- ============ MODALS ============ -->
-<div class="modal-backdrop" id="modal-tx" role="dialog" aria-modal="true" aria-labelledby="modal-tx-title">
+<div class="modal-backdrop" id="modal-tx">
   <div class="modal">
-    <div class="modal-head"><h3 id="modal-tx-title">Add Transaction</h3><button class="icon-btn" data-close-modal aria-label="Close">✕</button></div>
+    <div class="modal-head"><h3>Add Transaction</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <form id="tx-form">
       <div class="field-row">
         <div class="field"><label>Type</label><select name="type" required><option value="expense">Expense</option><option value="income">Income</option></select></div>
@@ -337,7 +337,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-budget" role="dialog" aria-modal="true" aria-labelledby="modal-budget-title">
+<div class="modal-backdrop" id="modal-budget">
   <div class="modal">
     <div class="modal-head"><h3>Set Monthly Budget</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <form id="budget-form">
@@ -348,7 +348,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-recurring" role="dialog" aria-modal="true" aria-labelledby="modal-recurring-title">
+<div class="modal-backdrop" id="modal-recurring">
   <div class="modal">
     <div class="modal-head"><h3>Add Recurring Transaction</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <form id="recurring-form">
@@ -380,7 +380,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-goal" role="dialog" aria-modal="true" aria-labelledby="modal-goal-title">
+<div class="modal-backdrop" id="modal-goal">
   <div class="modal">
     <div class="modal-head"><h3>New Savings Goal</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <form id="goal-form">
@@ -396,7 +396,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-networth" role="dialog" aria-modal="true" aria-labelledby="modal-networth-title">
+<div class="modal-backdrop" id="modal-networth">
   <div class="modal">
     <div class="modal-head"><h3>Add Asset / Liability</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <form id="networth-form">
@@ -408,7 +408,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-category" role="dialog" aria-modal="true" aria-labelledby="modal-category-title">
+<div class="modal-backdrop" id="modal-category">
   <div class="modal">
     <div class="modal-head"><h3>Add Category</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <form id="category-form">
@@ -425,7 +425,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-ocr" role="dialog" aria-modal="true" aria-labelledby="modal-ocr-title">
+<div class="modal-backdrop" id="modal-ocr">
   <div class="modal">
     <div class="modal-head"><h3>Scan GCash Receipt</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <div class="field"><label>Upload screenshot</label><input type="file" id="ocr-file-input" accept="image/*" /></div>
@@ -447,7 +447,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="modal-import-preview" role="dialog" aria-modal="true" aria-labelledby="modal-import-title">
+<div class="modal-backdrop" id="modal-import-preview">
   <div class="modal" style="max-width:720px;">
     <div class="modal-head"><h3>Import Preview</h3><button class="icon-btn" data-close-modal>✕</button></div>
     <div id="import-preview-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;"></div>
