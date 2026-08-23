@@ -66,7 +66,7 @@ export function overallBudgetAdherence(progress) {
 export function renderBudgetList(containerEl, progress) {
   if (!containerEl) return;
   if (!progress.length) {
-    containerEl.innerHTML = `<div class="empty-state"><div class="ico">🎯</div>No budgets set for this month.</div>`;
+    containerEl.innerHTML = `<div class="empty-state"><div class="ico">🎯</div><div style="font-weight:600;margin-bottom:4px;">No budgets yet</div><div style="font-size:13px;margin-bottom:12px;">Set a monthly budget to track spending and get alerts.</div><button class="btn btn-primary btn-sm" data-open-modal="modal-budget">+ Set Budget</button></div>`;
     return;
   }
   const statusMeta = (b) => {

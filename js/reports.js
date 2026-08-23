@@ -28,6 +28,10 @@ export function financialGrowthReport(summary, netWorthItems) {
 export function renderReportTable(containerEl, title, rows, columns) {
   if (!containerEl) return;
   const esc = escapeHtml;
+  if (!rows.length) {
+    containerEl.innerHTML = `<div class="empty-state"><div class="ico">📑</div><div style="font-weight:600;margin-bottom:4px;">No report data yet</div><div style="font-size:13px;margin-bottom:12px;">Add transactions to generate your expense breakdown.</div><button class="btn btn-ghost btn-sm" data-route="transactions">Go to Transactions</button></div>`;
+    return;
+  }
   const head = columns.map((c) => `<th style="text-align:left;padding:8px;font-size:11.5px;color:var(--text-faint);">${esc(c.label)}</th>`).join('');
   const body = rows
     .map(
@@ -37,7 +41,7 @@ export function renderReportTable(containerEl, title, rows, columns) {
     .join('');
   containerEl.innerHTML = `
     <h4 style="margin-bottom:10px;">${esc(title)}</h4>
-    <table style="width:100%;border-collapse:collapse;"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;"><table style="width:100%;min-width:360px;border-collapse:collapse;"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
   `;
 }
 

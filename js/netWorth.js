@@ -98,7 +98,7 @@ export async function ensureTodaySnapshot(userId, items) {
 export function renderNetWorthList(containerEl, items) {
   if (!containerEl) return;
   if (!items.length) {
-    containerEl.innerHTML = `<div class="empty-state"><div class="ico">🏦</div>Add your assets and liabilities to see your net worth.</div>`;
+    containerEl.innerHTML = `<div class="empty-state"><div class="ico">🏦</div><div style="font-weight:600;margin-bottom:4px;">No assets or liabilities yet</div><div style="font-size:13px;margin-bottom:12px;">Add an asset (savings, property) or liability (loan, debt) to track net worth.</div><button class="btn btn-primary btn-sm" data-open-modal="modal-networth">+ Add Entry</button></div>`;
     return;
   }
   containerEl.innerHTML = items

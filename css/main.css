@@ -393,10 +393,56 @@ label { font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bott
 .empty-state { text-align: center; padding: 40px 20px; color: var(--text-faint); }
 .empty-state .ico { font-size: 34px; margin-bottom: 10px; }
 
+/* ---------- Responsive polish 320-1440 ---------- */
+@media (max-width: 390px) {
+  .main { padding: 14px 12px 100px; }
+  .stat-value { font-size: 22px; }
+  .kpi-big { font-size: 22px; }
+  .card { padding: 16px; }
+  .grid-stats { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 360px) {
+  .grid-stats { grid-template-columns: 1fr; }
+  .topbar .greeting { font-size: 18px; }
+}
+@media (min-width: 1440px) {
+  .main { max-width: 1280px; margin: 0 auto; }
+}
+/* Prevent horizontal scroll on any viewport */
+html, body { overflow-x: hidden; }
+.main, .card, table { max-width: 100%; }
+/* Tables responsive */
+.card table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ---------- Accessibility: focus states ---------- */
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+.nav-item:focus-visible, .icon-btn:focus-visible, .row-del:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- Skeleton loading ---------- */
+.skeleton {
+  background: linear-gradient(90deg, var(--border) 25%, var(--surface-solid) 37%, var(--border) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+.skeleton-text { height: 12px; margin: 8px 0; }
+.skeleton-stat { height: 26px; width: 60%; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+
+/* Error state */
+.error-state { text-align: center; padding: 32px 20px; color: var(--coral); background: var(--coral-soft); border-radius: var(--radius-md); border: 1px solid var(--coral); }
+.error-state .ico { font-size: 28px; margin-bottom: 8px; }
 
 .hidden { display: none !important; }
 .spinner {
