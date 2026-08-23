@@ -413,6 +413,19 @@ label { font-size: 12.5px; font-weight: 600; color: var(--text-dim); margin-bott
 }
 .app-loading .spinner { width: 28px; height: 28px; border-width: 3px; }
 
+/* ---------- Money Trend range toggle ---------- */
+.range-group { display:flex; gap:6px; flex-wrap:wrap; }
+.range-btn { border-radius:100px; min-width:42px; justify-content:center; }
+.range-btn.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.range-btn:focus-visible { outline:2px solid var(--signal); outline-offset:2px; }
+
+/* Empty handling for charts */
+.chart-empty { color: var(--text-faint); font-size:13px; }
+
+/* Forecast / Safe cards */
+.kpi-big { font-size:28px; font-weight:800; letter-spacing:-.02em; }
+.kpi-sub { font-size:12.5px; color:var(--text-dim); }
+
 /* ============ AI Financial Coach ============ */
 .coach-headline { font-weight: 600; font-size: 14.5px; margin-bottom: 12px; }
 .coach-headline.ok { color: var(--growth); }

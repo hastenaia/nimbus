@@ -23,7 +23,7 @@ function escapeHtml(s) {
  * priority is 0 (info) … 3 (critical). Selection sorts by priority and
  * de-duplicates by group so the strongest, most diverse insights win.
  */
-export function generateInsights({ transactions, budgetsProgress, goals, categories, netWorthItems = [] }) {
+export function generateInsights({ transactions, budgetsProgress, goals, categories, netWorthItems = [], forecast, safeToSpend }) {
   const insights = [];
   const now = new Date();
   const thisMonthKey = monthKeyOf(now);
@@ -206,7 +206,23 @@ export function generateInsights({ transactions, budgetsProgress, goals, categor
     }
   }
 
-  // 15. Sparse-data states
+  // 15. Cash-flow forecast direction (uses estimated trend)
+  if (forecast && !forecast.insufficient) {
+    if (forecast.estimatedBalance < balance && forecast.avgDailyNet < 0) {
+      insights.push({ id: 'forecast', group: 'forecast', icon: '📉', priority: 2, text: `Cash flow is trending down — estimated balance in ${forecast.forecastDays} days is ${formatMoney(forecast.estimatedBalance)} vs ${formatMoney(balance)} today.` });
+    } else if (forecast.estimatedBalance > balance && forecast.avgDailyNet > 0) {
+      insights.push({ id: 'forecast', group: 'forecast', icon: '📈', priority: 1, text: `Cash flow looks positive — estimated ${formatMoney(forecast.estimatedBalance)} in ${forecast.forecastDays} days.` });
+    }
+  }
+
+  // 16. Safe to Spend low
+  if (safeToSpend && !safeToSpend.insufficient && safeToSpend.safeDaily != null) {
+    if (safeToSpend.safeDaily < 150 && balance > 1000) {
+      insights.push({ id: 'safeLow', group: 'safe', icon: '💸', priority: 2, text: `Safe to spend is only ${formatMoney(safeToSpend.safeDaily)}/day after reserving for upcoming bills and goals.` });
+    }
+  }
+
+  // 17. Sparse-data states
   if (!transactions.length) {
     insights.push({ id: 'onboarding', group: 'onboarding', icon: '👋', priority: 0, text: `Log your first income and expenses and I'll start coaching you.` });
   } else if (summary.months.length <= 1) {
@@ -282,9 +298,9 @@ export function answerCoachQuestion(question, data, amount) {
     if (!budgetsProgress.length) {
       return { icon: '📋', text: 'No budgets set yet — set one up and I\'ll track your pacing.' };
     }
-    const onPace = budgetsProgress.filter((b) => b.state === 'ok').length;
+    const onPace = budgetsProgress.filter((b) => b.state === 'healthy').length;
     const over = budgetsProgress.filter((b) => b.state === 'over').map((b) => b.categories?.name || 'a category');
-    const atRisk = budgetsProgress.filter((b) => b.state === 'warn').map((b) => b.categories?.name || 'a category');
+    const atRisk = budgetsProgress.filter((b) => b.state === 'warning' || b.state === 'critical').map((b) => b.categories?.name || 'a category');
     let msg = `${onPace} of ${budgetsProgress.length} budgets are on pace.`;
     if (over.length) msg += ` Over: ${over.join(', ')}.`;
     else if (atRisk.length) msg += ` At risk: ${atRisk.join(', ')}.`;

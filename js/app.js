@@ -12,8 +12,11 @@ import { fetchNetWorthItems, upsertNetWorthItem, deleteNetWorthItem, computeNetW
 import { generateInsights, renderCoachCard, computeHeadline, answerCoachQuestion } from './coach.js';
 import {
   renderIncomeVsExpense, renderCategoryPie, renderSavingsGrowth, renderCashFlow,
-  renderBudgetBreakdown, renderGrowthTimeline, renderHealthRings,
+  renderBudgetBreakdown, renderGrowthTimeline, renderHealthRings, renderMoneyTrend, renderForecastMini,
 } from './charts.js';
+import { getMoneyTrendSeries, isValidRange } from './moneyTrend.js';
+import { computeCashFlowForecast } from './forecast.js';
+import { computeSafeToSpend } from './safeToSpend.js';
 import { runOcr, preloadOcr } from './ocr.js';
 import { exportToJson, exportToCsv, exportToExcel, parseImportFile } from './importExport.js';
 import { fetchRecurring, addRecurring, deleteRecurring, generateDueTransactions, renderRecurringList } from './recurring.js';
@@ -23,6 +26,7 @@ import { financialGrowthReport, categoryReport, renderReportTable } from './repo
 import {
   formatMoney, monthKey, sum, toast, debounce,
   summarizeTransactions, emptyMonthSummary, calcHealthScore,
+  computeSpendingConsistency, computeEmergencyRunway, computeDebtRatio,
 } from './utils.js';
 
 let currentUser = null;
@@ -34,6 +38,7 @@ let state = {
   goals: [],
   netWorthItems: [],
   recurring: [],
+  moneyTrendRange: localStorage.getItem('nimbus_trend_range') || '30D',
 };
 
 // ---------------- THEME ----------------
@@ -200,19 +205,32 @@ function renderDashboard() {
     ? sum(state.goals, (g) => Math.min(1, g.current_amount / g.target_amount)) / state.goals.length
     : 0;
 
+  // Improved health score with additional derived factors
+  const spendingConsistency = computeSpendingConsistency(s);
+  const emergencyRunway = computeEmergencyRunway(balance, s);
+  const debtRatio = computeDebtRatio(state.netWorthItems);
+
   renderHealthRings(document.getElementById('health-rings-svg'), {
     savingsPct: Math.min(1, savingsRate / 20),
     budgetPct: budgetAdherence,
     goalPct: goalProgress,
   });
-  setText('health-score-value', `${calcHealthScore({ savingsRate, budgetAdherence, goalProgress })}`);
+  const healthScore = calcHealthScore({ savingsRate, budgetAdherence, goalProgress, spendingConsistency, emergencyRunway, debtRatio });
+  setText('health-score-value', `${healthScore}`);
 
   const largest = s.largestExpense && (s.largestExpense.occurred_on || '').slice(0, 7) === thisMonth ? s.largestExpense : null;
   setText('stat-largest-expense', largest ? formatMoney(largest.amount) : '—');
 
   renderTransactionList(document.getElementById('recent-tx-list'), state.transactions.slice(0, 6));
 
-  const insights = generateInsights(coachContext());
+  // Forecast & Safe to Spend computed first so coach can reference them
+  const forecast = computeCashFlowForecast({ transactions: state.transactions, recurring: state.recurring, balance });
+  const safeToSpend = computeSafeToSpend({ balance, recurring: state.recurring, budgetsProgress: state.budgetsProgress, goals: state.goals, transactions: state.transactions });
+  renderForecastCard(forecast);
+  renderSafeToSpendCard(safeToSpend);
+  renderMoneyTrendCard();
+
+  const insights = generateInsights({ ...coachContext(), forecast, safeToSpend });
   renderCoachCard(document.getElementById('coach-card-body'), insights);
   const headline = computeHeadline(insights);
   const headlineEl = document.getElementById('coach-headline');
@@ -224,6 +242,71 @@ function renderDashboard() {
   renderIncomeVsExpense('chart-income-expense', s);
   renderCategoryPie('chart-category-pie', thisM.categories, getCategories());
   renderSavingsGrowth('chart-savings-growth', s);
+}
+
+function renderMoneyTrendCard() {
+  const range = state.moneyTrendRange || '30D';
+  const series = getMoneyTrendSeries(state.transactions, range);
+  renderMoneyTrend('chart-money-trend', series);
+  // Sync active button states
+  document.querySelectorAll('.range-btn').forEach((btn) => {
+    const isActive = btn.dataset.range === range;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-pressed', String(isActive));
+  });
+}
+
+function renderForecastCard(forecast) {
+  const body = document.getElementById('forecast-body');
+  if (!body) return;
+  if (forecast.insufficient) {
+    body.innerHTML = `<div style="padding:10px 0;color:var(--text-dim);font-size:13.5px;line-height:1.5;">${escapeHtml(forecast.reason)}</div>`;
+    const c = document.getElementById('chart-forecast-mini');
+    if (c) c.style.display = 'none';
+    return;
+  }
+  const trendIcon = forecast.estimatedBalance >= forecast.currentBalance ? '📈' : '📉';
+  const diff = forecast.estimatedBalance - forecast.currentBalance;
+  const diffColor = diff >= 0 ? 'var(--growth)' : 'var(--coral)';
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px;">
+      <div><div class="kpi-sub">Current balance</div><div class="kpi-big mono">${formatMoney(forecast.currentBalance)}</div></div>
+      <div><div class="kpi-sub">Estimated balance</div><div class="kpi-big mono" style="color:${diffColor}">${formatMoney(forecast.estimatedBalance)}</div></div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--text-dim);">
+      <span>${trendIcon} Next ${forecast.forecastDays} days</span>
+      <span>· Avg ${formatMoney(forecast.avgDailyNet)}/day</span>
+      ${forecast.recurringExpenses ? `<span>· Upcoming bills ${formatMoney(forecast.recurringExpenses)}</span>` : ''}
+    </div>
+  `;
+  const c = document.getElementById('chart-forecast-mini');
+  if (c) c.style.display = 'block';
+  renderForecastMini('chart-forecast-mini', forecast.dailySeries);
+}
+
+function renderSafeToSpendCard(res) {
+  const body = document.getElementById('safe-body');
+  if (!body) return;
+  if (res.insufficient) {
+    body.innerHTML = `<div style="padding:10px 0;color:var(--text-dim);font-size:13.5px;line-height:1.5;">${escapeHtml(res.reason)}</div>`;
+    return;
+  }
+  const warn = res.warning ? `<div style="margin-top:8px;font-size:12.5px;color:var(--gold);">${escapeHtml(res.warning)}</div>` : '';
+  const low = res.lowConfidence ? `<div style="margin-top:6px;font-size:11.5px;color:var(--text-faint);">Low confidence — add more income data for a tighter estimate.</div>` : '';
+  body.innerHTML = `
+    <div style="margin-top:6px;">
+      <div class="kpi-sub" style="letter-spacing:.06em;text-transform:uppercase;font-weight:700;">Safe to Spend</div>
+      <div class="kpi-big mono" style="font-size:32px;">${formatMoney(res.safeDaily)}/day</div>
+      <div style="font-size:13px;color:var(--text-dim);">${formatMoney(res.safeMonthly)} for the rest of the month · ${res.daysRemaining} days left</div>
+    </div>
+    <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;color:var(--text-faint);">
+      <span>Upcoming bills: ${formatMoney(res.breakdown.upcomingRecurringExpenses)}</span>
+      <span>Reserved for goals: ${formatMoney(res.breakdown.goalReserve)}</span>
+      <span>Buffer (${Math.round((res.buffer / Math.max(1, res.safeMonthly + res.buffer))*100) || 15}%): ${formatMoney(res.breakdown.buffer)}</span>
+      <span>Expected income: ${formatMoney(res.breakdown.expectedIncome)}</span>
+    </div>
+    ${warn}${low}
+  `;
 }
 
 function renderTransactionsPage() {
@@ -707,6 +790,16 @@ function wireFilters() {
       renderTransactionsPage();
     });
   });
+
+  // Money Trend range toggle
+  document.getElementById('money-trend-card')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.range-btn');
+    if (!btn || !isValidRange(btn.dataset.range)) return;
+    state.moneyTrendRange = btn.dataset.range;
+    localStorage.setItem('nimbus_trend_range', state.moneyTrendRange);
+    renderMoneyTrendCard();
+  });
+  // Keyboard accessibility: Enter/Space handled natively for button
 }
 
 function coachContext() {
