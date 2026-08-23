@@ -67,6 +67,8 @@ function initRouting() {
 }
 
 function goToRoute(route) {
+  // Auth guard: block navigation when logged out
+  if (!currentUser) { showAuthScreen(); return; }
   document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === `page-${route}`));
   document.querySelectorAll('[data-route]').forEach((btn) => btn.classList.toggle('active', btn.dataset.route === route));
   if (route === 'reports') renderReports();
@@ -93,8 +95,16 @@ async function boot() {
   });
 
   document.getElementById('logout-btn')?.addEventListener('click', async () => {
+    // Clear per-user localStorage to prevent cross-user leakage on shared devices
+    try {
+      if (currentUser?.id) localStorage.removeItem(`nimbus_last_import_${currentUser.id}`);
+      // Keep theme preference, clear sensitive transient keys
+      sessionStorage.clear();
+    } catch {}
     await signOut();
     currentUser = null;
+    // Defensive: clear in-memory state
+    state = { transactions: [], summary: { byMonth: new Map(), totalIncome: 0, totalExpense: 0, largestExpense: null, months: [] }, budgetsProgress: [], goals: [], netWorthItems: [], netWorthSnapshots: [], recurring: [], moneyTrendRange: localStorage.getItem('nimbus_trend_range') || '30D' };
     showAuthScreen();
   });
 }
@@ -607,20 +617,45 @@ function populateCategorySelects() {
   });
 }
 
+function isValidDateStr(s) {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y,m,d] = s.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  return dt.getFullYear()===y && dt.getMonth()===m-1 && dt.getDate()===d;
+}
+function validateAmount(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 'Amount must be a number';
+  if (n <= 0) return 'Amount must be greater than 0';
+  if (n > 100000000) return 'Amount too large';
+  if (!/^\d+(\.\d{1,2})?$/.test(String(v).trim())) return 'Amount must have at most 2 decimals';
+  return null;
+}
 function wireTransactionModal() {
   const form = document.getElementById('tx-form');
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
+    const amountStr = String(fd.get('amount') || '').trim();
+    const amtErr = validateAmount(amountStr);
+    if (amtErr) { toast(amtErr); return; }
+    const dateStr = String(fd.get('occurred_on') || '').trim();
+    if (!isValidDateStr(dateStr)) { toast('Invalid date'); return; }
+    const type = String(fd.get('type') || '').trim();
+    if (!['income','expense'].includes(type)) { toast('Invalid type'); return; }
+    const desc = String(fd.get('description') || '').trim();
+    if (desc.length > 200) { toast('Description too long (max 200)'); return; }
+    const notes = String(fd.get('notes') || '').trim();
+    if (notes.length > 500) { toast('Notes too long (max 500)'); return; }
     try {
       await addTransaction(currentUser.id, {
-        type: fd.get('type'),
-        amount: parseFloat(fd.get('amount')),
+        type,
+        amount: parseFloat(amountStr),
         category_id: fd.get('category_id') || null,
         payment_method: fd.get('payment_method'),
-        description: fd.get('description'),
-        notes: fd.get('notes'),
-        occurred_on: fd.get('occurred_on'),
+        description: desc,
+        notes,
+        occurred_on: dateStr,
         is_recurring: fd.get('is_recurring') === 'on',
       });
       form.reset();
@@ -628,7 +663,9 @@ function wireTransactionModal() {
       await refreshAllData();
       renderAll();
     } catch (err) {
-      toast(err.message || 'Could not save transaction');
+      // Do not leak raw error with sensitive details
+      toast('Could not save transaction');
+      console.error('addTransaction failed');
     }
   });
 }
@@ -638,6 +675,9 @@ function wireBudgetModal() {
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
+    const amtErr = validateAmount(String(fd.get('amount')||'').trim());
+    if (amtErr) { toast(amtErr); return; }
+    if (!fd.get('category_id')) { toast('Category required'); return; }
     try {
       await upsertBudget(currentUser.id, fd.get('category_id'), monthKey(), parseFloat(fd.get('amount')));
       form.reset();
@@ -645,7 +685,8 @@ function wireBudgetModal() {
       await refreshAllData();
       renderAll();
     } catch (err) {
-      toast(err.message || 'Could not save budget');
+      toast('Could not save budget');
+      console.error('upsertBudget failed');
     }
   });
 }
@@ -655,22 +696,31 @@ function wireRecurringModal() {
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
+    const amtErr = validateAmount(String(fd.get('amount')||'').trim());
+    if (amtErr) { toast(amtErr); return; }
+    const nextRun = String(fd.get('next_run') || '').trim() || new Date().toISOString().slice(0,10);
+    if (!isValidDateStr(nextRun)) { toast('Invalid next run date'); return; }
+    const freq = String(fd.get('frequency')||'').trim();
+    if (!['daily','weekly','monthly','yearly'].includes(freq)) { toast('Invalid frequency'); return; }
+    const desc = String(fd.get('description')||'').trim();
+    if (desc.length > 200) { toast('Description too long'); return; }
     try {
       await addRecurring(currentUser.id, {
         type: fd.get('type'),
-        amount: parseFloat(fd.get('amount')),
+        amount: parseFloat(String(fd.get('amount')).trim()),
         category_id: fd.get('category_id'),
         payment_method: fd.get('payment_method'),
-        description: fd.get('description'),
-        frequency: fd.get('frequency'),
-        next_run: fd.get('next_run') || new Date().toISOString().slice(0, 10),
+        description: desc,
+        frequency: freq,
+        next_run: nextRun,
       });
       form.reset();
       document.getElementById('modal-recurring')?.classList.remove('open');
       state.recurring = await fetchRecurring(currentUser.id);
       renderRecurring();
     } catch (err) {
-      toast(err.message || 'Could not save recurring transaction');
+      toast('Could not save recurring transaction');
+      console.error('addRecurring failed');
     }
   });
 }
@@ -714,20 +764,35 @@ function wireGoalModal() {
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
+    const name = String(fd.get('name')||'').trim();
+    if (!name || name.length > 100) { toast(name ? 'Goal name too long (max 100)' : 'Goal name required'); return; }
+    const targetErr = validateAmount(String(fd.get('target_amount')||'').trim());
+    if (targetErr) { toast(targetErr); return; }
+    const currStr = String(fd.get('current_amount')||'0').trim();
+    const curr = parseFloat(currStr||0);
+    if (!Number.isFinite(curr) || curr <0) { toast('Invalid starting amount'); return; }
+    const deadline = String(fd.get('deadline')||'').trim() || null;
+    if (deadline && !isValidDateStr(deadline)) { toast('Invalid deadline'); return; }
+    if (deadline) {
+      const dl = new Date(deadline);
+      const today = new Date(); today.setHours(0,0,0,0);
+      if (dl < today) { toast('Deadline cannot be in the past'); return; }
+    }
     try {
       await createGoal(currentUser.id, {
-        name: fd.get('name'),
-        target_amount: parseFloat(fd.get('target_amount')),
-        current_amount: parseFloat(fd.get('current_amount') || 0),
-        deadline: fd.get('deadline') || null,
-        icon: fd.get('icon') || '🎯',
+        name,
+        target_amount: parseFloat(String(fd.get('target_amount')).trim()),
+        current_amount: curr,
+        deadline,
+        icon: String(fd.get('icon')||'🎯').slice(0,4),
       });
       form.reset();
       document.getElementById('modal-goal')?.classList.remove('open');
       await refreshAllData();
       renderAll();
     } catch (err) {
-      toast(err.message || 'Could not create goal');
+      toast('Could not create goal');
+      console.error('createGoal failed');
     }
   });
 
@@ -753,11 +818,19 @@ function wireNetWorthModal() {
   form?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
+    const name = String(fd.get('name')||'').trim();
+    if (!name || name.length > 100) { toast(name?'Name too long (max 100)':'Name required'); return; }
+    const valStr = String(fd.get('value')||'').trim();
+    const vErr = validateAmount(valStr);
+    // net worth value can be 0, but validateAmount rejects 0; allow 0 for assets/liabilities
+    const val = parseFloat(valStr);
+    if (!Number.isFinite(val) || val <0) { toast('Value must be 0 or greater'); return; }
+    if (val > 1000000000) { toast('Value too large'); return; }
     try {
       const saved = await upsertNetWorthItem(currentUser.id, {
         kind: fd.get('kind'),
-        name: fd.get('name'),
-        value: parseFloat(fd.get('value')),
+        name,
+        value: val,
       });
       // Phase 8: snapshot today's calculated state after mutation (upsert per user+date, no duplicates)
       try {

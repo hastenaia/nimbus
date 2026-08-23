@@ -97,12 +97,12 @@ export function renderGoalList(containerEl, goals) {
       const cls = g.completed_at ? 'ok' : pct >= 70 ? 'ok' : pct >= 30 ? 'warn' : 'over';
       const daysLeft = g.deadline ? daysBetween(new Date(), g.deadline) : null;
       return `
-      <div class="card solid" data-goal-id="${g.id}" style="margin-bottom:12px;">
+      <div class="card solid" data-goal-id="${escapeHtml(g.id)}" style="margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div style="font-weight:600;">${g.icon || '🎯'} ${escapeHtml(g.name)}</div>
+          <div style="font-weight:600;">${escapeHtml(g.icon || '🎯')} ${escapeHtml(g.name)}</div>
           <div style="display:flex;align-items:center;gap:10px;">
             <div class="mono" style="font-size:13px;">${Math.round(pct)}%</div>
-            <button class="row-del" data-del="${g.id}" aria-label="Delete goal" title="Delete">✕</button>
+            <button class="row-del" data-del="${escapeHtml(g.id)}" aria-label="Delete goal" title="Delete">✕</button>
           </div>
         </div>
         <div class="progress ${g.completed_at ? 'ok' : cls}" style="margin:10px 0;"><span style="width:${pct}%"></span></div>
@@ -110,7 +110,7 @@ export function renderGoalList(containerEl, goals) {
           <span>${formatMoney(g.current_amount)} of ${formatMoney(g.target_amount)}</span>
           <span>${g.completed_at ? 'Completed 🎉' : g.deadline ? `${daysLeft}d left` : ''}</span>
         </div>
-        ${!g.completed_at ? `<button class="btn btn-ghost btn-sm contribute-btn" data-goal-id="${g.id}" style="margin-top:10px;">+ Add contribution</button>` : ''}
+        ${!g.completed_at ? `<button class="btn btn-ghost btn-sm contribute-btn" data-goal-id="${escapeHtml(g.id)}" style="margin-top:10px;">+ Add contribution</button>` : ''}
       </div>`;
     })
     .join('');

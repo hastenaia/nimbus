@@ -155,15 +155,16 @@ export function renderRecurringList(containerEl, items, categories) {
     .map((r) => {
       const cat = catById.get(r.category_id) || {};
       const sign = r.type === 'income' ? '+' : '−';
+      const safeType = r.type === 'income' ? 'income' : 'expense';
       return `
-      <div class="tx-row" data-id="${r.id}">
-        <div class="tx-icon" style="background:${cat.color ? cat.color + '22' : 'var(--signal-soft)'}">${cat.icon || '🔁'}</div>
+      <div class="tx-row" data-id="${escapeHtml(r.id)}">
+        <div class="tx-icon" style="background:${cat.color ? cat.color + '22' : 'var(--signal-soft)'}">${escapeHtml(cat.icon || '🔁')}</div>
         <div class="tx-main">
           <div class="tx-title">${escapeHtml(r.description || cat.name || 'Recurring')}</div>
-          <div class="tx-meta">${frequencyLabel(r.frequency)} · next ${formatDate(r.next_run)}</div>
+          <div class="tx-meta">${escapeHtml(frequencyLabel(r.frequency))} · next ${escapeHtml(formatDate(r.next_run))}</div>
         </div>
-        <div class="tx-amount ${r.type}">${sign}${formatMoney(r.amount)}</div>
-        <button class="row-del" data-del="${r.id}" aria-label="Delete recurring transaction" title="Delete">✕</button>
+        <div class="tx-amount ${safeType}">${sign}${formatMoney(r.amount)}</div>
+        <button class="row-del" data-del="${escapeHtml(r.id)}" aria-label="Delete recurring transaction" title="Delete">✕</button>
       </div>`;
     })
     .join('');

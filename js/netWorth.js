@@ -104,14 +104,14 @@ export function renderNetWorthList(containerEl, items) {
   containerEl.innerHTML = items
     .map(
       (i) => `
-      <div class="tx-row" data-id="${i.id}">
+      <div class="tx-row" data-id="${escapeHtml(i.id)}">
         <div class="tx-icon" style="background:${i.kind === 'asset' ? 'var(--growth-soft)' : 'var(--coral-soft)'}">${i.kind === 'asset' ? '📈' : '📉'}</div>
         <div class="tx-main">
           <div class="tx-title">${escapeHtml(i.name)}</div>
           <div class="tx-meta">${i.kind === 'asset' ? 'Asset' : 'Liability'}</div>
         </div>
         <div class="tx-amount ${i.kind === 'asset' ? 'income' : 'expense'}">${formatMoney(i.value)}</div>
-        <button class="row-del" data-del="${i.id}" aria-label="Delete entry" title="Delete">✕</button>
+        <button class="row-del" data-del="${escapeHtml(i.id)}" aria-label="Delete entry" title="Delete">✕</button>
       </div>`
     )
     .join('');

@@ -76,27 +76,28 @@ export function renderBudgetList(containerEl, progress) {
     return { icon: '✓', text: `${Math.round(b.pct)}% used · ${formatMoney(b.remaining)} remaining · ${b.daysRemaining}d left.`, color: 'var(--growth)' };
   };
   const labelFor = (s) => s === 'over' ? 'Over Budget' : s === 'critical' ? 'Critical' : s === 'warning' ? 'Warning' : 'Healthy';
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   containerEl.innerHTML = progress
     .map((b) => {
       const cat = b.categories || {};
       const cls = b.cssState || (b.state === 'over' ? 'over' : b.state === 'warning' || b.state === 'critical' ? 'warn' : 'ok');
       const meta = statusMeta(b);
       return `
-      <div class="field" data-budget-id="${b.id}" style="padding:8px 0; border-bottom:1px solid var(--border);">
+      <div class="field" data-budget-id="${esc(b.id)}" style="padding:8px 0; border-bottom:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px;margin-bottom:6px;">
           <span style="display:flex;align-items:center;gap:8px;">
             <span style="font-size:11px; padding:3px 7px; border-radius:100px; background:var(--border); color:var(--text-dim); font-weight:700; text-transform:uppercase; letter-spacing:.04em;">${labelFor(b.state)}</span>
-            <span><span>${cat.icon || ''}</span> ${cat.name || 'Category'}</span>
+            <span><span>${esc(cat.icon || '')}</span> ${esc(cat.name || 'Category')}</span>
           </span>
           <span style="display:flex;align-items:center;gap:8px;">
             <span class="mono" style="font-weight:700;">${formatMoney(b.spent)} / ${formatMoney(b.amount)}</span>
             <span class="mono" style="font-size:12px; color:var(--text-faint);">${Math.round(b.pct)}%</span>
-            <button class="row-del" data-del="${b.id}" aria-label="Delete budget for ${cat.name || 'category'}" title="Delete">✕</button>
+            <button class="row-del" data-del="${esc(b.id)}" aria-label="Delete budget for ${esc(cat.name || 'category')}" title="Delete">✕</button>
           </span>
         </div>
         <div class="progress ${cls}"><span style="width:${Math.min(100, b.pct)}%"></span></div>
         <div class="tx-meta" style="color:${meta.color};margin-top:6px;display:flex;gap:6px;align-items:center;">
-          <span aria-hidden="true">${meta.icon}</span><span>${meta.text}</span>
+          <span aria-hidden="true">${esc(meta.icon)}</span><span>${esc(meta.text)}</span>
         </div>
       </div>`;
     })
