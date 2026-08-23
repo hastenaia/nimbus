@@ -47,17 +47,18 @@ export async function signIn(email, password) {
 
 export async function signInWithGoogle() {
   const supabase = getSupabase();
-  const { error } = await supabase.auth.signInWithOAuth({
+  const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: window.location.href },
+    options: { redirectTo: window.location.origin },
   });
   if (error) throw error;
+  return data;
 }
 
 export async function sendPasswordReset(email) {
   const supabase = getSupabase();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.href,
+    redirectTo: window.location.origin,
   });
   if (error) throw error;
 }
@@ -116,10 +117,40 @@ export function wireAuthForms({ onAuthed }) {
   });
 
   googleBtn?.addEventListener('click', async () => {
+    if (!googleBtn) return;
+    const originalText = googleBtn.textContent;
+    const originalDisabled = googleBtn.disabled;
+    // Loading state + prevent duplicate OAuth requests
+    googleBtn.disabled = true;
+    googleBtn.textContent = 'Connecting to Google...';
+    googleBtn.setAttribute('aria-busy', 'true');
     try {
       await signInWithGoogle();
+      // On success, browser will redirect to Google; no need to restore button
+      // If redirect does not happen (e.g., popup blocked), restore after timeout
+      setTimeout(() => {
+        if (document.contains(googleBtn) && googleBtn.disabled) {
+          googleBtn.disabled = originalDisabled;
+          googleBtn.textContent = originalText;
+          googleBtn.removeAttribute('aria-busy');
+        }
+      }, 8000);
     } catch (err) {
-      toast(authErrorMessage(err, 'Google sign-in failed'));
+      const msg = String(err?.message || '').toLowerCase();
+      let friendly = authErrorMessage(err, 'Google sign-in failed. Please try again.');
+      // OAuth provider not configured — give actionable Supabase Dashboard guidance
+      if (msg.includes('provider not enabled') || msg.includes('unsupported provider') || msg.includes('validation failed')) {
+        friendly = 'Google sign-in is not configured. Please enable Google provider in Supabase Dashboard → Authentication → Providers.';
+        console.error('Supabase Google provider not enabled. Configure in Dashboard → Auth → Providers → Google');
+      } else if (msg.includes('not configured')) {
+        friendly = 'Google sign-in is not configured. Please enable Google provider in Supabase Dashboard → Authentication → Providers.';
+      }
+      toast(friendly);
+      // Restore button on error (do not expose secrets / internal details to user, but log for dev)
+      console.error('Google sign-in failed', err);
+      googleBtn.disabled = originalDisabled;
+      googleBtn.textContent = originalText;
+      googleBtn.removeAttribute('aria-busy');
     }
   });
 }
