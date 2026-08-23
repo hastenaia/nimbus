@@ -366,6 +366,69 @@ export function renderForecastMini(canvasId, dailySeries) {
   });
 }
 
+export function renderSavingsRateTrend(canvasId, trend) {
+  const c = themeColors();
+  const pts = trend || [];
+  // Need at least 2 points to draw trend; otherwise empty state
+  if (pts.length < 2) {
+    destroyChart(canvasId);
+    toggleEmpty(canvasId, true, pts.length === 0 ? 'No income history yet — log income to see savings rate trend.' : 'Add another month to see savings rate trend.');
+    return;
+  }
+  toggleEmpty(canvasId, false);
+  const canvas = document.getElementById(canvasId);
+  if (canvas) {
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', 'Savings rate trend showing income minus expenses divided by income over time');
+  }
+  const labels = pts.map((p) => p.month);
+  const data = pts.map((p) => p.rate);
+  const opts = baseOptions({
+    tooltip: {
+      callbacks: {
+        label: (ctx) => ` Savings rate: ${ctx.parsed.y.toFixed(1)}%`,
+        afterLabel: (ctx) => {
+          const pt = pts[ctx.dataIndex];
+          return ` Net: ${formatPeso(pt.net)} · Income: ${formatPeso(pt.income)}`;
+        },
+      },
+    },
+  });
+  opts.scales = {
+    x: { ticks: { color: c.text, font: { size: 10.5 } }, grid: { display: false } },
+    y: {
+      ticks: {
+        color: c.text,
+        font: { size: 10.5 },
+        callback: (v) => `${v}%`,
+      },
+      grid: { color: c.grid },
+      suggestedMin: -10,
+      suggestedMax: 40,
+    },
+  };
+  render(canvasId, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Savings Rate',
+          data,
+          borderColor: c.growth,
+          backgroundColor: c.growth + '22',
+          fill: true,
+          tension: 0.35,
+          pointRadius: data.length > 6 ? 0 : 3,
+          pointBackgroundColor: c.growth,
+          borderWidth: 2,
+        },
+      ],
+    },
+    options: opts,
+  });
+}
+
 /** Draws the signature concentric "health rings" SVG (Savings / Budget / Goals). */
 export function renderHealthRings(svgEl, { savingsPct, budgetPct, goalPct }) {
   if (!svgEl) return;

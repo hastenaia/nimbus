@@ -13,10 +13,12 @@ import { generateInsights, renderCoachCard, computeHeadline, answerCoachQuestion
 import {
   renderIncomeVsExpense, renderCategoryPie, renderSavingsGrowth, renderCashFlow,
   renderBudgetBreakdown, renderGrowthTimeline, renderHealthRings, renderMoneyTrend, renderForecastMini,
+  renderSavingsRateTrend,
 } from './charts.js';
 import { getMoneyTrendSeries, isValidRange } from './moneyTrend.js';
 import { computeCashFlowForecast } from './forecast.js';
 import { computeSafeToSpend } from './safeToSpend.js';
+import { computeAnalytics } from './analytics.js';
 import { runOcr, preloadOcr } from './ocr.js';
 import { exportToJson, exportToCsv, exportToExcel, parseImportFile } from './importExport.js';
 import { fetchRecurring, addRecurring, deleteRecurring, generateDueTransactions, renderRecurringList } from './recurring.js';
@@ -230,6 +232,12 @@ function renderDashboard() {
   renderSafeToSpendCard(safeToSpend);
   renderMoneyTrendCard();
 
+  // Advanced Analytics — reuses summary (no extra queries)
+  const analytics = computeAnalytics({ summary: s, categories: getCategories(), currentMonthKey: thisMonth });
+  renderAnalyticsMoM(analytics);
+  renderAnalyticsInsights(analytics);
+  renderSavingsRateTrend('chart-savings-rate-trend', analytics.savingsRateTrend);
+
   const insights = generateInsights({ ...coachContext(), forecast, safeToSpend });
   renderCoachCard(document.getElementById('coach-card-body'), insights);
   const headline = computeHeadline(insights);
@@ -307,6 +315,106 @@ function renderSafeToSpendCard(res) {
     </div>
     ${warn}${low}
   `;
+}
+
+function formatDelta(change) {
+  if (change == null) return { text: '—', cls: 'neutral', arrow: '' };
+  const v = Number(change);
+  if (Math.abs(v) < 0.05) return { text: '0.0%', cls: 'neutral', arrow: '→' };
+  const arrow = v > 0 ? '↑' : '↓';
+  const cls = v > 0 ? 'up' : 'down';
+  return { text: `${v > 0 ? '+' : ''}${v.toFixed(1)}%`, cls, arrow: arrow + ' ' };
+}
+
+function renderAnalyticsMoM(a) {
+  const grid = document.getElementById('analytics-mom-grid');
+  const trendEl = document.getElementById('analytics-spending-trend');
+  if (!grid) return;
+  const m = a.mom;
+  const mk = (val, change) => {
+    const d = formatDelta(change);
+    // For expenses, increase is bad (red), decrease is good (green) — invert color
+    // But keep generic: we color net/income up = green, expenses up = red.
+    return { d, val };
+  };
+  // Build 4 cells: Income, Expenses, Net, Savings Rate
+  const incomeDelta = formatDelta(m.income.change);
+  const expDelta = formatDelta(m.expenses.change);
+  // For expenses delta, swap color: up is bad
+  const expCls = expDelta.cls === 'up' ? 'down' : expDelta.cls === 'down' ? 'up' : 'neutral';
+  const netDelta = formatDelta(m.net.change);
+  const rateDelta = m.savingsRate.changeAbs != null ? { text: `${m.savingsRate.changeAbs > 0 ? '+' : ''}${m.savingsRate.changeAbs.toFixed(1)} pts`, cls: m.savingsRate.changeAbs > 0 ? 'up' : m.savingsRate.changeAbs < 0 ? 'down' : 'neutral', arrow: m.savingsRate.changeAbs > 0 ? '↑ ' : m.savingsRate.changeAbs < 0 ? '↓ ' : '→ ' } : { text: '—', cls: 'neutral', arrow: '' };
+
+  grid.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+      <div style="background:var(--surface-solid);border:1px solid var(--border);border-radius:12px;padding:12px;">
+        <div class="kpi-sub" style="margin-bottom:4px;">Income</div>
+        <div class="mono" style="font-weight:700;font-size:16px;">${formatMoney(m.income.curr)}</div>
+        <div class="stat-delta ${incomeDelta.cls}" style="font-size:11.5px;">${incomeDelta.arrow}${incomeDelta.text}${!m.hasPrev ? '<span style="color:var(--text-faint);font-weight:400;"> · no prior data</span>' : ''}</div>
+      </div>
+      <div style="background:var(--surface-solid);border:1px solid var(--border);border-radius:12px;padding:12px;">
+        <div class="kpi-sub" style="margin-bottom:4px;">Expenses</div>
+        <div class="mono" style="font-weight:700;font-size:16px;">${formatMoney(m.expenses.curr)}</div>
+        <div class="stat-delta ${expCls}" style="font-size:11.5px;">${expDelta.arrow}${expDelta.text}${!m.hasPrev ? '<span style="color:var(--text-faint);font-weight:400;"> · no prior data</span>' : ''}</div>
+      </div>
+      <div style="background:var(--surface-solid);border:1px solid var(--border);border-radius:12px;padding:12px;">
+        <div class="kpi-sub" style="margin-bottom:4px;">Net Cash Flow</div>
+        <div class="mono" style="font-weight:700;font-size:16px;color:${m.net.curr >=0 ? 'var(--growth)' : 'var(--coral)'}">${formatMoney(m.net.curr)}</div>
+        <div class="stat-delta ${netDelta.cls}" style="font-size:11.5px;">${netDelta.arrow}${netDelta.text}${!m.hasPrev ? '<span style="color:var(--text-faint);font-weight:400;"> · no prior data</span>' : ''}</div>
+      </div>
+      <div style="background:var(--surface-solid);border:1px solid var(--border);border-radius:12px;padding:12px;">
+        <div class="kpi-sub" style="margin-bottom:4px;">Savings Rate</div>
+        <div class="mono" style="font-weight:700;font-size:16px;">${m.savingsRate.curr.toFixed(1)}%</div>
+        <div class="stat-delta ${rateDelta.cls}" style="font-size:11.5px;">${rateDelta.arrow}${rateDelta.text}${!m.hasPrev ? '<span style="color:var(--text-faint);font-weight:400;"> · no prior data</span>' : ''}</div>
+      </div>
+    </div>`;
+  if (trendEl) {
+    // Spending trend doc: >5% increase = increasing, <-5% decreasing, else stable
+    const t = a.spendingTrend;
+    const icon = t.status === 'increasing' ? '📈' : t.status === 'decreasing' ? '📉' : '➖';
+    const color = t.status === 'increasing' ? 'var(--coral)' : t.status === 'decreasing' ? 'var(--growth)' : 'var(--text-faint)';
+    const pctStr = t.changePct != null ? ` (${t.changePct >0?'+':''}${t.changePct.toFixed(1)}% vs last month)` : '';
+    const doc = '<span style="font-size:10px;color:var(--text-faint);"> · threshold ±5%</span>';
+    trendEl.innerHTML = `<span style="color:${color};font-weight:600;">${icon} Spending is ${t.label.toLowerCase()}</span><span>${pctStr}</span>${doc}`;
+  }
+}
+
+function renderAnalyticsInsights(a) {
+  const insightEl = document.getElementById('analytics-insight-body');
+  const topEl = document.getElementById('analytics-top-cats');
+  const anomEl = document.getElementById('analytics-anomalies');
+  if (insightEl) {
+    const ins = a.insight;
+    if (ins) {
+      insightEl.innerHTML = `<div class="coach-insight"><span class="coach-insight-ico">${ins.icon}</span><div class="coach-insight-body">${escapeHtml(ins.text)}</div></div>`;
+    } else {
+      insightEl.innerHTML = `<div style="color:var(--text-faint);font-size:13px;">No insight yet.</div>`;
+    }
+  }
+  if (topEl) {
+    if (!a.topCategories.length) {
+      topEl.innerHTML = `<div style="color:var(--text-faint);font-size:12.5px;">No expense categories this month.</div>`;
+    } else {
+      topEl.innerHTML = a.topCategories.map((tc, idx) => {
+        const ch = tc.changePct == null ? '<span style="color:var(--text-faint);">— no prior data</span>' : `<span class="mono" style="color:${tc.changePct>0?'var(--coral)':'var(--growth)'}">${tc.changePct>0?'+':''}${tc.changePct.toFixed(1)}% vs last month</span>`;
+        return `<div class="tx-row" style="padding:8px 0;">
+          <div class="tx-icon" style="background:${tc.color ? tc.color+'22' : 'var(--signal-soft)'}">${tc.icon||'🏷️'}</div>
+          <div class="tx-main">
+            <div class="tx-title" style="font-size:13px;">${idx+1}. ${escapeHtml(tc.name)} <span style="font-weight:400;color:var(--text-faint);font-size:11.5px;">· ${tc.pctOfExpenses.toFixed(1)}% of expenses</span></div>
+            <div class="tx-meta">${formatMoney(tc.currentAmount)} · ${ch}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+  }
+  if (anomEl) {
+    if (!a.anomalies.length) {
+      anomEl.innerHTML = `<div style="font-size:12px;color:var(--text-faint);margin-top:8px;">No spending anomalies detected — based on your own history (mean + 1.5×stddev).</div>`;
+    } else {
+      anomEl.innerHTML = `<div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--gold);margin-bottom:6px;">Spending Anomalies</div>` +
+        a.anomalies.map((an) => `<div style="font-size:12.5px;color:var(--text-dim);display:flex;gap:8px;margin-top:4px;"><span>${an.icon||'⚠️'}</span><span>${escapeHtml(an.name)} — ${escapeHtml(an.reason)}</span></div>`).join('');
+    }
+  }
 }
 
 function renderTransactionsPage() {

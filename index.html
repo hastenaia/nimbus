@@ -155,6 +155,31 @@
         <div style="height:260px;margin-top:14px;"><canvas id="chart-money-trend"></canvas></div>
       </div>
 
+      <!-- Advanced Analytics — Month-over-Month -->
+      <div class="card" id="analytics-mom-card" style="margin-top:16px;" aria-live="polite">
+        <div class="card-title">Month-over-Month</div>
+        <div style="font-size:11px;color:var(--text-faint);margin-bottom:12px;">Current month vs previous month — based on real transactions.</div>
+        <div id="analytics-mom-grid"></div>
+        <div id="analytics-spending-trend" style="margin-top:12px;font-size:12.5px;color:var(--text-dim);"></div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:16px;">
+        <div class="card" id="analytics-insights-card" aria-live="polite">
+          <div class="card-title">Financial Insight</div>
+          <div id="analytics-insight-body"></div>
+          <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+            <div class="card-title" style="margin-bottom:8px;font-size:11px;">Top Spending Categories</div>
+            <div id="analytics-top-cats"></div>
+            <div id="analytics-anomalies" style="margin-top:10px;"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Savings Rate Trend</div>
+          <div style="font-size:11px;color:var(--text-faint);margin-bottom:8px;">Savings Rate = (income − expenses) ÷ income · zero income handled safely.</div>
+          <div style="height:200px;"><canvas id="chart-savings-rate-trend" role="img" aria-label="Savings rate trend over last months"></canvas></div>
+        </div>
+      </div>
+
       <!-- Forecast + Safe to Spend -->
       <div class="grid grid-2" style="margin-top:16px;">
         <div class="card" id="forecast-card" aria-live="polite">
