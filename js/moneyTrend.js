@@ -1,6 +1,8 @@
 // Money Trend — groups real Supabase transactions by date/month for the selected range.
 // Derived-only: no fake data, zero-fills gaps so the line chart stays continuous.
 
+import { isoLocal } from './utils.js';
+
 const RANGE_CONFIG = {
   '7D':  { days: 7,  bucket: 'day' },
   '30D': { days: 30, bucket: 'day' },
@@ -14,7 +16,7 @@ export function isValidRange(r) { return r in RANGE_CONFIG; }
 function pad(n) { return String(n).padStart(2, '0'); }
 
 function isoDate(d) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return isoLocal(d);
 }
 
 function monthKeyStr(d) {
@@ -22,12 +24,15 @@ function monthKeyStr(d) {
 }
 
 function labelForDay(d) {
-  // "Aug 20" — short month + day
+  // "Aug 20" — short month + day (local)
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function labelForMonth(d) {
-  // "Aug 2025" or "Aug" if current year
+function labelForMonth(d, range) {
+  // 1Y: always include 2-digit year to avoid duplicate Aug labels (Aug '25 vs Aug '26)
+  if (range === '1Y') {
+    return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }).replace(',', '');
+  }
   const now = new Date();
   if (d.getFullYear() === now.getFullYear()) {
     return d.toLocaleDateString('en-US', { month: 'short' });
@@ -39,7 +44,7 @@ function labelForMonth(d) {
  * Build bucket keys covering [start, end] inclusive.
  * bucket: 'day' -> each YYYY-MM-DD, 'month' -> each YYYY-MM
  */
-function buildBuckets(start, end, bucket) {
+function buildBuckets(start, end, bucket, range) {
   const keys = [];
   if (bucket === 'day') {
     const cur = new Date(start);
@@ -54,7 +59,7 @@ function buildBuckets(start, end, bucket) {
     const cur = new Date(start.getFullYear(), start.getMonth(), 1);
     const stop = new Date(end.getFullYear(), end.getMonth(), 1);
     while (cur <= stop) {
-      keys.push({ key: monthKeyStr(cur), label: labelForMonth(cur), date: new Date(cur) });
+      keys.push({ key: monthKeyStr(cur), label: labelForMonth(cur, range), date: new Date(cur) });
       cur.setMonth(cur.getMonth() + 1);
     }
   }
@@ -82,7 +87,7 @@ export function getMoneyTrendSeries(transactions, range = '30D') {
     start.setTime(tmp.getTime());
   }
 
-  const buckets = buildBuckets(start, end, cfg.bucket);
+  const buckets = buildBuckets(start, end, cfg.bucket, range);
   const map = new Map();
   for (const b of buckets) map.set(b.key, { income: 0, expense: 0 });
 

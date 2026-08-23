@@ -302,7 +302,7 @@ function renderSafeToSpendCard(res) {
     <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;color:var(--text-faint);">
       <span>Upcoming bills: ${formatMoney(res.breakdown.upcomingRecurringExpenses)}</span>
       <span>Reserved for goals: ${formatMoney(res.breakdown.goalReserve)}</span>
-      <span>Buffer (${Math.round((res.buffer / Math.max(1, res.safeMonthly + res.buffer))*100) || 15}%): ${formatMoney(res.breakdown.buffer)}</span>
+      <span>Buffer (${res.buffer > 0 ? Math.round((res.buffer / Math.max(1, res.safeMonthly + res.buffer))*100) : 0}%): ${formatMoney(res.breakdown.buffer)}</span>
       <span>Expected income: ${formatMoney(res.breakdown.expectedIncome)}</span>
     </div>
     ${warn}${low}

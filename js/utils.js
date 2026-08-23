@@ -17,13 +17,70 @@ export function formatDate(d, opts = { month: 'short', day: 'numeric' }) {
   return new Date(d).toLocaleDateString('en-US', opts);
 }
 
+// Local-date helpers — do NOT use new Date("YYYY-MM-DD") for financial dates (UTC trap for PH UTC+8).
+export function parseLocalISO(s) {
+  const [y, m, d] = String(s).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+export function isoLocal(d) {
+  const dt = new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+export function isoTodayLocal() {
+  return isoLocal(new Date());
+}
+
 export function monthKey(date = new Date()) {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
 export function daysBetween(a, b) {
-  return Math.ceil((new Date(b) - new Date(a)) / 86400000);
+  // Use local parse for YYYY-MM-DD strings to avoid UTC off-by-one for PH.
+  const da = typeof a === 'string' && /^\d{4}-\d{2}-\d{2}/.test(a) ? parseLocalISO(a.slice(0, 10)) : new Date(a);
+  const db = typeof b === 'string' && /^\d{4}-\d{2}-\d{2}/.test(b) ? parseLocalISO(b.slice(0, 10)) : new Date(b);
+  if (!da || !db) return 0;
+  return Math.ceil((db - da) / 86400000);
+}
+
+// Unified recurring occurrence counter — deterministic, handles month-end clamping.
+export function countOccurrences(frequency, nextRunStr, horizonStr) {
+  const start = parseLocalISO(nextRunStr);
+  const end = parseLocalISO(horizonStr);
+  if (!start || !end || start > end) return 0;
+  if (frequency === 'daily') {
+    return Math.ceil((end - start) / 86400000) + 1;
+  }
+  if (frequency === 'weekly') {
+    return Math.floor((end - start) / (7 * 86400000)) + 1;
+  }
+  if (frequency === 'monthly') {
+    let count = 0;
+    const origDay = start.getDate();
+    let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+    // Preserve original day where possible, clamp to last day of month.
+    const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cur <= endMonth) {
+      const lastDay = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+      const day = Math.min(origDay, lastDay);
+      const occ = new Date(cur.getFullYear(), cur.getMonth(), day);
+      if (occ >= start && occ <= end) count++;
+      cur.setMonth(cur.getMonth() + 1);
+    }
+    return count;
+  }
+  if (frequency === 'yearly') {
+    let count = 0;
+    let cur = new Date(start);
+    while (cur <= end) {
+      if (cur >= start) count++;
+      cur.setFullYear(cur.getFullYear() + 1);
+      // Clamp Feb 29 drift: keep month/day if valid else adjust
+    }
+    return count;
+  }
+  return 1;
 }
 
 /**

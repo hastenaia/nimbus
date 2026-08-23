@@ -41,30 +41,33 @@ function formatPeso(v) {
   } catch { return `₱${Number(v || 0).toFixed(2)}`; }
 }
 
-// Helper to hide canvas when empty and show sibling empty-state div if present
+// Helper to show/hide chart vs empty state inside the SAME height wrapper.
+// Empty message is centered within the chart area; no duplicate elements; wrap height preserved.
 function toggleEmpty(canvasId, isEmpty, message) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const wrap = canvas.closest('div[style*="height"]') || canvas.parentElement;
-  const card = canvas.closest('.card');
-  let emptyEl = card ? card.querySelector('.chart-empty') : null;
-  if (!emptyEl && card && message) {
+  if (!wrap) return;
+  // Ensure wrap can position overlay
+  if (!wrap.dataset.emptyInit) {
+    wrap.style.position = 'relative';
+    wrap.dataset.emptyInit = '1';
+  }
+  let emptyEl = wrap.querySelector(':scope > .chart-empty');
+  if (!emptyEl && message) {
     emptyEl = document.createElement('div');
     emptyEl.className = 'chart-empty empty-state';
-    emptyEl.style.padding = '18px';
-    card.appendChild(emptyEl);
+    // Overlay centered inside wrap; wrap height already set inline (e.g. 260px)
+    emptyEl.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px;text-align:center;';
+    wrap.appendChild(emptyEl);
   }
   if (emptyEl) {
-    emptyEl.textContent = message || '';
-    emptyEl.style.display = isEmpty ? 'block' : 'none';
-    // ensure icon prefix
-    if (isEmpty && !emptyEl.querySelector('.ico')) {
-      emptyEl.innerHTML = `<div class="ico">📊</div>${message}`;
-    }
+    if (message) emptyEl.innerHTML = `<div class="ico">📊</div>${message}`;
+    emptyEl.style.display = isEmpty ? 'flex' : 'none';
   }
-  if (canvas) canvas.style.display = isEmpty ? 'none' : 'block';
-  // keep wrapper height so card doesn't collapse
-  if (wrap && wrap.style) wrap.style.display = isEmpty ? 'none' : 'block';
+  canvas.style.display = isEmpty ? 'none' : 'block';
+  // Never hide wrap — keep height so card doesn't collapse; empty overlays it
+  wrap.style.display = 'block';
 }
 
 export function destroyChart(canvasId) {
@@ -247,6 +250,13 @@ export function renderGrowthTimeline(canvasId, netWorthHistory) {
 export function renderMoneyTrend(canvasId, series) {
   const c = themeColors();
   const pts = series?.points || [];
+  const canvas = document.getElementById(canvasId);
+  // Accessibility: role + descriptive label
+  if (canvas) {
+    canvas.setAttribute('role', 'img');
+    const rangeLabel = series?.range ? ` for the last ${series.range.toLowerCase()}` : '';
+    canvas.setAttribute('aria-label', `Money trend${rangeLabel} showing income, expenses, and net cash flow`);
+  }
   if (!pts.length || pts.length < 2) {
     destroyChart(canvasId);
     toggleEmpty(canvasId, true, 'Not enough transaction history to show this trend yet. Log income and expenses and it will appear here.');
@@ -315,8 +325,15 @@ export function renderMoneyTrend(canvasId, series) {
 
 export function renderForecastMini(canvasId, dailySeries) {
   const c = themeColors();
+  const canvas = document.getElementById(canvasId);
   if (!dailySeries || dailySeries.length < 2) {
     destroyChart(canvasId);
+    // Hide canvas without showing chart-empty (body already shows insufficient text)
+    if (canvas) canvas.style.display = 'none';
+    // Also hide any prior chart-empty overlay in this wrap
+    const wrap = canvas?.closest('div[style*="height"]');
+    const emptyEl = wrap?.querySelector(':scope > .chart-empty');
+    if (emptyEl) emptyEl.style.display = 'none';
     return;
   }
   toggleEmpty(canvasId, false);

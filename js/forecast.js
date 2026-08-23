@@ -2,16 +2,7 @@
 // Derived from real data only: current balance, avg daily net, upcoming recurring.
 // Never invents history; returns insufficient flag when data is sparse.
 
-import { sum } from './utils.js';
-
-function daysBetweenCeil(a, b) {
-  return Math.ceil((new Date(b) - new Date(a)) / 86400000);
-}
-
-function isoToday() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
-}
+import { isoLocal, isoTodayLocal, parseLocalISO, countOccurrences } from './utils.js';
 
 /**
  * @param {Object} opts
@@ -22,10 +13,10 @@ function isoToday() {
  * @returns {{ insufficient: boolean, reason?: string, currentBalance: number, estimatedBalance: number, forecastDays: number, avgDailyNet: number, avgDailyIncome: number, avgDailyExpense: number, recurringNet: number, recurringExpenses: number, recurringIncomes: number, dailySeries: number[] } }
  */
 export function computeCashFlowForecast({ transactions, recurring = [], balance, forecastDays = 30 }) {
-  const todayIso = isoToday();
+  const todayIso = isoTodayLocal();
   const thirtyAgo = new Date();
   thirtyAgo.setDate(thirtyAgo.getDate() - 30);
-  const thirtyAgoIso = `${thirtyAgo.getFullYear()}-${String(thirtyAgo.getMonth() + 1).padStart(2, '0')}-${String(thirtyAgo.getDate()).padStart(2, '0')}`;
+  const thirtyAgoIso = isoLocal(thirtyAgo);
 
   // Need at least some history to estimate.
   const recentTx = transactions.filter((t) => (t.occurred_on || '') >= thirtyAgoIso);
@@ -60,35 +51,19 @@ export function computeCashFlowForecast({ transactions, recurring = [], balance,
   const avgDailyExpense = expense30 / 30;
   const avgDailyNet = avgDailyIncome - avgDailyExpense;
 
-  // Upcoming recurring net within forecast window (from next_run)
-  // We use recurring next_run field; count each occurrence once if due within forecast window.
-  // For simplicity, assume monthly recurring hits once in next 30d if next_run <= today+forecastDays.
+  // Upcoming recurring net within forecast window — uses shared local-date counter (consistent with Safe to Spend).
   const horizon = new Date();
   horizon.setDate(horizon.getDate() + forecastDays);
-  const horizonIso = `${horizon.getFullYear()}-${String(horizon.getMonth() + 1).padStart(2, '0')}-${String(horizon.getDate()).padStart(2, '0')}`;
+  const horizonIso = isoLocal(horizon);
 
   let recurringIncomes = 0, recurringExpenses = 0;
   for (const r of recurring) {
     if (!r.active) continue;
-    // naive within-window check: next_run between today and horizon
-    // For daily/weekly, could recur multiple times but we count one occurrence conservatively;
-    // better to approximate monthly as once, weekly as 4x, daily as forecastDays x — document limitation.
     const nextRun = r.next_run || todayIso;
     if (nextRun > horizonIso) continue;
     const amt = Number(r.amount) || 0;
-    let occurrences = 1;
-    if (r.frequency === 'weekly') {
-      occurrences = Math.ceil(forecastDays / 7);
-      // but only if next_run within window, approximate
-      if (nextRun > todayIso) occurrences = Math.ceil(daysBetweenCeil(nextRun, horizonIso) / 7);
-    } else if (r.frequency === 'daily') {
-      occurrences = daysBetweenCeil(nextRun <= todayIso ? todayIso : nextRun, horizonIso);
-      if (occurrences <= 0) occurrences = 1;
-      // cap to forecastDays
-      occurrences = Math.min(occurrences, forecastDays);
-    }
-    // monthly/yearly stays 1
-    const total = amt * occurrences;
+    const occurrences = countOccurrences(r.frequency, nextRun, horizonIso);
+    const total = amt * Math.max(1, occurrences);
     if (r.type === 'income') recurringIncomes += total;
     else recurringExpenses += total;
   }

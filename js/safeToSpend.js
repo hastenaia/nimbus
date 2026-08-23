@@ -2,12 +2,7 @@
 // Considers balance, upcoming recurring expenses, budget headroom, savings goals, expected income, and buffer.
 // Returns explanatory object; never claims guarantee.
 
-import { sum } from './utils.js';
-
-function isoToday() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
-}
+import { parseLocalISO, isoLocal, isoTodayLocal, countOccurrences } from './utils.js';
 
 function daysRemainingInMonth() {
   const now = new Date();
@@ -30,29 +25,22 @@ export function computeSafeToSpend({ balance, recurring = [], budgetsProgress = 
   if (transactions.length < 3) missing.push('transaction history');
   // Need at least balance calculable — always available but check
 
-  // Upcoming recurring expenses within remainder of month
-  const todayIso = isoToday();
+  // Upcoming recurring expenses within remainder of month — uses local dates & shared counter
+  const todayIso = isoTodayLocal();
   const eom = new Date();
   eom.setMonth(eom.getMonth() + 1, 0);
-  const eomIso = `${eom.getFullYear()}-${String(eom.getMonth() + 1).padStart(2, '0')}-${String(eom.getDate()).padStart(2, '0')}`;
+  const eomIso = isoLocal(eom);
 
   let upcomingRecurringExpenses = 0;
   let upcomingRecurringIncomes = 0;
   for (const r of recurring) {
     if (!r.active) continue;
-    const nr = r.next_run || todayIso;
+    const rawNr = r.next_run || todayIso;
+    // Clamp start to today if next_run is in the past; use local string compare (YYYY-MM-DD lexicographic = chronological)
+    const nr = rawNr < todayIso ? todayIso : rawNr;
     if (nr > eomIso) continue;
     const amt = Number(r.amount) || 0;
-    // For daily/weekly within remainder of month, approximate occurrences
-    let occ = 1;
-    if (r.frequency === 'daily') {
-      const start = nr < todayIso ? todayIso : nr;
-      occ = Math.max(1, Math.ceil((new Date(eomIso) - new Date(start)) / 86400000));
-      occ = Math.min(occ, daysRemainingInMonth());
-    } else if (r.frequency === 'weekly') {
-      const start = nr < todayIso ? todayIso : nr;
-      occ = Math.max(1, Math.ceil((new Date(eomIso) - new Date(start)) / (7 * 86400000)));
-    }
+    const occ = countOccurrences(r.frequency, nr, eomIso);
     if (r.type === 'expense') upcomingRecurringExpenses += amt * occ;
     else upcomingRecurringIncomes += amt * occ;
   }
@@ -65,7 +53,8 @@ export function computeSafeToSpend({ balance, recurring = [], budgetsProgress = 
     const remaining = Math.max(0, Number(g.target_amount) - Number(g.current_amount || 0));
     if (remaining <= 0) continue;
     if (g.deadline) {
-      const days = Math.ceil((new Date(g.deadline) - now) / 86400000);
+      const parsedDeadline = parseLocalISO(g.deadline);
+      const days = parsedDeadline ? Math.ceil((parsedDeadline - now) / 86400000) : Infinity;
       if (days >= 0 && days <= 60) {
         goalReserve += remaining * 0.15; // need to reserve more urgently
       } else if (days >= 0 && days <= 180) {
@@ -77,8 +66,8 @@ export function computeSafeToSpend({ balance, recurring = [], budgetsProgress = 
       goalReserve += remaining * 0.02;
     }
   }
-  // Cap goalReserve to max 40% of balance to avoid absurd conservative lock
-  goalReserve = Math.min(goalReserve, balance * 0.4);
+  // Cap goalReserve to max 40% of positive balance only; never negative
+  goalReserve = Math.min(goalReserve, Math.max(0, balance * 0.4));
   goalReserve = Math.max(0, Math.round(goalReserve * 100) / 100);
 
   // Expected income for remainder of month
@@ -116,31 +105,23 @@ export function computeSafeToSpend({ balance, recurring = [], budgetsProgress = 
     expIncome = Math.max(0, Number(expIncome) || 0);
   }
 
-  // Buffer: 15% of balance, at least ₱500 or 10% if balance < ₱3000, capped at 25%
+  // Buffer: 15% of positive balance (10% if <₱3,000), capped at 25%; zero/negative balance => 0 buffer (no artificial boost)
   const bufferRate = balance < 3000 ? 0.1 : 0.15;
-  const buffer = Math.round(Math.min(balance * bufferRate, balance * 0.25) * 100) / 100;
+  const rawBuffer = balance > 0 ? Math.min(balance * bufferRate, balance * 0.25) : 0;
+  const buffer = Math.max(0, Math.round(rawBuffer * 100) / 100);
 
-  // Remaining budget headroom — sum of remaining where under budget
+  // Remaining budget headroom — informational only; not a hard cap on safe spend.
   let budgetHeadroom = 0;
   if (budgetsProgress.length) {
     for (const b of budgetsProgress) {
       if (b.remaining > 0) budgetHeadroom += b.remaining;
     }
   }
+  // Note: budgetHeadroom is displayed for context but intentionally NOT used as a hard constraint
+  // on safeMonthly — safe spend is balance-based; budgeting is advisory.
 
   // Safe monthly = balance - upcomingRecurringExpenses - goalReserve - buffer + expectedIncomeRemaining
-  // Then clamp to never exceed balance + expectedIncome headroom
   let safeMonthly = balance - upcomingRecurringExpenses - goalReserve - buffer + Number(expIncome || 0);
-  // Also constrain by budget headroom if budgets exist: safeMonthly cannot exceed budgetHeadroom + unbudgeted slack (20%)
-  // We keep conservative: take min(safeMonthly, budgetHeadroom >0 ? budgetHeadroom*1.2 + 500 : safeMonthly)
-  if (budgetsProgress.length && budgetHeadroom > 0) {
-    const budgetCap = budgetHeadroom * 1.0 + 300; // small slack for uncategorized
-    if (safeMonthly > budgetCap && budgetCap > 0) {
-      // keep the smaller but not negative
-      // only cap if safeMonthly wildly exceeds budgets: protects from overspend on budgeted categories
-      // we don't hard cap to budgetHeadroom because user may have unbudgeted income
-    }
-  }
   safeMonthly = Math.max(0, Math.round(safeMonthly * 100) / 100);
   const daysRemaining = daysRemainingInMonth();
   const safeDaily = Math.round((safeMonthly / daysRemaining) * 100) / 100;
