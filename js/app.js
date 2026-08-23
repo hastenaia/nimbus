@@ -22,6 +22,8 @@ import { computeSafeToSpend } from './safeToSpend.js';
 import { computeAnalytics } from './analytics.js';
 import { runOcr, preloadOcr } from './ocr.js';
 import { exportToJson, exportToCsv, exportToExcel, parseImportFile } from './importExport.js';
+import { parseCsvWithPreview, buildPreviewFromRows, autoMapHeaders, checkFileSize, parseDateSafe } from './csvImport.js';
+import { deleteTransactionsByIds } from './transactions.js';
 import { fetchRecurring, addRecurring, deleteRecurring, generateDueTransactions, renderRecurringList } from './recurring.js';
 import { parseGcashCsv } from './gcashImport.js';
 import { suggestCategoryId } from './autocat.js';
@@ -869,6 +871,138 @@ function wireCategoryList() {
   });
 }
 
+let pendingPreview = null;
+let pendingHeaders = null;
+
+function formatMoneyCompact(n){ try{return new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(n)}catch{return `₱${Number(n).toFixed(2)}`} }
+
+function renderImportPreview(preview) {
+  pendingPreview = preview;
+  const statsEl = document.getElementById('import-preview-stats');
+  const mapEl = document.getElementById('import-mapping');
+  const errEl = document.getElementById('import-preview-errors');
+  const headEl = document.getElementById('import-preview-head');
+  const bodyEl = document.getElementById('import-preview-body');
+  const dupCountEl = document.getElementById('dup-count');
+  const confirmBtn = document.getElementById('import-confirm-btn');
+  const undoEl = document.getElementById('import-undo');
+  if (undoEl) undoEl.style.display = 'none';
+
+  if (!preview || preview.empty) {
+    statsEl.innerHTML = `<div style="padding:12px;color:var(--coral);">Empty file — no rows found.</div>`;
+    if (confirmBtn) confirmBtn.disabled = true;
+    return;
+  }
+  const s = preview.stats;
+  const warn = checkFileSize(s.total);
+  statsEl.innerHTML = `
+    <div style="border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--text-faint);">Rows</div><div class="mono" style="font-weight:700;">${s.total}</div></div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--text-faint);">Valid</div><div class="mono" style="font-weight:700;color:var(--growth);">${s.valid}</div></div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--text-faint);">Invalid</div><div class="mono" style="font-weight:700;color:var(--coral);">${s.invalid}</div></div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--text-faint);">Duplicates</div><div class="mono" style="font-weight:700;color:var(--gold);">${s.duplicates}</div></div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--text-faint);">Income</div><div class="mono" style="font-weight:700;">${s.income} · ${formatMoneyCompact(s.totalIncome)}</div></div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;"><div style="font-size:11px;color:var(--text-faint);">Expenses</div><div class="mono" style="font-weight:700;">${s.expense} · ${formatMoneyCompact(s.totalExpense)}</div></div>
+    ${warn ? `<div style="grid-column:1/-1;font-size:11px;color:var(--gold);text-align:center;">${warn.warn}</div>` : '' }
+  `;
+  // Column mapping UI
+  const allFields = ['date','amount','type','category','description','payment_method','notes'];
+  const labels = {date:'Date *', amount:'Amount *', type:'Type', category:'Category', description:'Description', payment_method:'Payment Method', notes:'Notes'};
+  mapEl.innerHTML = allFields.map(field => {
+    const cur = preview.mapping[field] || '';
+    const opts = ['<option value="">— not mapped —</option>'].concat(preview.headers.map(h=> `<option value="${escapeHtml(h)}" ${h===cur?'selected':''}>${escapeHtml(h)}</option>`)).join('');
+    return `<div class="field" style="margin-bottom:4px;"><label style="font-size:11px;">${labels[field]}</label><select data-map-field="${field}" style="font-size:12.5px;padding:6px 8px;">${opts}</select></div>`;
+  }).join('');
+  // wire mapping changes
+  mapEl.querySelectorAll('select').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      const field = sel.dataset.mapField;
+      const val = sel.value;
+      if (val) preview.mapping[field]=val; else delete preview.mapping[field];
+      const newPreview = buildPreviewFromRows(preview.headers, preview._dataRows || [], preview.mapping, state.transactions);
+      newPreview._dataRows = preview._dataRows;
+      newPreview.headers = preview.headers;
+      renderImportPreview(newPreview);
+    });
+  });
+
+  // Errors
+  if (s.invalid > 0) {
+    const errs = preview.invalidRows.slice(0,8).flatMap(v=> v.errors).join('<br>');
+    const more = s.invalid > 8 ? `<div style="color:var(--text-faint);">+ ${s.invalid-8} more invalid rows</div>` : '';
+    errEl.innerHTML = `<div style="font-weight:600;">Invalid rows:</div>${errs}${more}`;
+  } else errEl.innerHTML = `<div style="color:var(--growth);">All rows passed validation.</div>`;
+
+  if (dupCountEl) dupCountEl.textContent = String(s.duplicates);
+
+  // Table head
+  headEl.innerHTML = `<th style="padding:6px;text-align:left;">#</th><th style="padding:6px;text-align:left;">Status</th><th style="padding:6px;text-align:left;">Date</th><th style="padding:6px;text-align:left;">Amount</th><th style="padding:6px;text-align:left;">Type</th><th style="padding:6px;text-align:left;">Description</th><th style="padding:6px;text-align:left;">Error</th>`;
+  const skipDup = document.getElementById('import-skip-duplicates')?.checked;
+  bodyEl.innerHTML = preview.validated.slice(0,50).map((v,i)=>{
+    const isDup = preview.dupIdxSet.has(v.idx);
+    const status = !v.valid ? `<span style="color:var(--coral);font-weight:600;">Invalid</span>` : (isDup && skipDup ? `<span style="color:var(--gold);">Skip (dup)</span>` : isDup ? `<span style="color:var(--gold);">Dup</span>` : `<span style="color:var(--growth);">Valid</span>`);
+    const err = v.errors.join('; ');
+    const n = v.normalized;
+    return `<tr style="border-top:1px solid var(--border);${!v.valid?'background:var(--coral-soft);':''}${isDup && skipDup?'opacity:0.55;':''}"><td style="padding:6px;">${i+1}</td><td style="padding:6px;">${status}</td><td style="padding:6px;">${escapeHtml(n.occurred_on)}</td><td style="padding:6px;" class="mono">${escapeHtml(String(n.amount))}</td><td style="padding:6px;">${escapeHtml(n.type)}</td><td style="padding:6px;">${escapeHtml(n.description||'')}</td><td style="padding:6px;color:var(--coral);font-size:11px;">${escapeHtml(err)}</td></tr>`;
+  }).join('') + (preview.validated.length>50 ? `<tr><td colspan="7" style="padding:8px;text-align:center;color:var(--text-faint);">+ ${preview.validated.length-50} more rows not shown</td></tr>` : '');
+
+  if (confirmBtn) confirmBtn.disabled = s.valid === 0 || (s.valid - (skipDup? s.duplicates:0) <=0);
+  document.getElementById('modal-import-preview')?.classList.add('open');
+}
+
+async function handleImportFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  const isCsv = ext === 'csv';
+  const isJson = ext === 'json';
+  const isXlsx = ext === 'xlsx' || ext === 'xls';
+  try {
+    let preview;
+    if (isCsv) {
+      const text = await file.text();
+      if (!text.trim()) {
+        pendingPreview = { empty:true, stats:{total:0} };
+        renderImportPreview(pendingPreview);
+        return;
+      }
+      preview = parseCsvWithPreview(text, state.transactions);
+      // _dataRows already attached by parseCsvWithPreview
+    } else if (isJson) {
+      const text = await file.text();
+      let data;
+      try{ data = JSON.parse(text);}catch{ throw new Error('Invalid JSON file');}
+      const arr = Array.isArray(data)? data : [data];
+      if (!arr.length) { pendingPreview={empty:true, stats:{total:0}}; renderImportPreview(pendingPreview); return; }
+      const headers = Object.keys(arr[0]||{});
+      const dataRows = arr.map(obj=> headers.map(h=> obj[h] ?? ''));
+      const mapping = autoMapHeaders(headers);
+      if (!mapping.date && headers.length>0) mapping.date=headers[0];
+      if (!mapping.amount && headers.length>1) mapping.amount=headers[1];
+      preview = buildPreviewFromRows(headers, dataRows, mapping, state.transactions);
+      preview._dataRows = dataRows;
+      preview.headers = headers;
+    } else if (isXlsx) {
+      // reuse generic parser then build preview via auto mapping
+      const rows = await parseImportFile(file); // normalized rows (but we need raw for preview)
+      // For simplicity, treat normalized rows as already parsed: construct preview from them
+      const headers = ['date','amount','type','category','description','payment_method','notes'];
+      const dataRows = rows.map(r=> [r.occurred_on, r.amount, r.type, r.categoryName||'', r.description||'', r.payment_method||'', r.notes||'']);
+      const mapping = {date:'date',amount:'amount',type:'type',category:'category',description:'description',payment_method:'payment_method',notes:'notes'};
+      preview = buildPreviewFromRows(headers, dataRows, mapping, state.transactions);
+      preview._dataRows = dataRows;
+      preview.headers = headers;
+    } else {
+      throw new Error('Unsupported file type. Use CSV, XLSX, or JSON.');
+    }
+    // Empty file check
+    if (preview.stats.total === 0) {
+      toast('Empty file — no rows found');
+      return;
+    }
+    renderImportPreview(preview);
+  } catch (err) {
+    toast(err.message || 'Import preview failed');
+  }
+}
+
 function wireImportExport() {
   document.getElementById('export-json-btn')?.addEventListener('click', () => exportToJson(state.transactions));
   document.getElementById('export-csv-btn')?.addEventListener('click', () => exportToCsv(state.transactions));
@@ -883,31 +1017,8 @@ function wireImportExport() {
   document.getElementById('import-file-input')?.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    try {
-      const rows = await parseImportFile(file);
-      const valid = rows.filter((r) => Number(r.amount) > 0);
-      if (!valid.length) {
-        toast('No valid rows to import');
-        return;
-      }
-      const cats = new Map(getCategories().map((c) => [c.name.toLowerCase(), c]));
-      await bulkAddTransactions(currentUser.id, valid.map((r) => ({
-        type: r.type,
-        amount: r.amount,
-        category_id: r.categoryName ? (cats.get(r.categoryName.toLowerCase())?.id ?? null) : null,
-        payment_method: r.payment_method,
-        description: r.description,
-        notes: r.notes,
-        occurred_on: r.occurred_on,
-        source: 'import',
-      })));
-      toast(`Imported ${valid.length} transactions`);
-      e.target.value = '';
-      await refreshAllData();
-      renderAll();
-    } catch (err) {
-      toast(err.message || 'Import failed');
-    }
+    await handleImportFile(file);
+    e.target.value = '';
   });
 
   document.getElementById('gcash-import-input')?.addEventListener('change', async (e) => {
@@ -924,7 +1035,7 @@ function wireImportExport() {
         return;
       }
       const cats = new Map(getCategories().map((c) => [c.name.toLowerCase(), c]));
-      await bulkAddTransactions(currentUser.id, rows.map((r) => ({
+      const inserted = await bulkAddTransactions(currentUser.id, rows.map((r) => ({
         type: r.type,
         amount: r.amount,
         category_id: r.categoryName ? (cats.get(r.categoryName.toLowerCase())?.id ?? null) : null,
@@ -934,6 +1045,11 @@ function wireImportExport() {
         occurred_on: r.occurred_on,
         source: 'import',
       })));
+      localStorage.setItem(`nimbus_last_import_${currentUser.id}`, JSON.stringify(inserted.map(x=>x.id)));
+      document.getElementById('import-summary-text') && (document.getElementById('import-summary-text').textContent = `${inserted.length} GCash rows (${expense} expense / ${income} income)`);
+      document.getElementById('import-undo') && (document.getElementById('import-undo').style.display='block');
+      document.getElementById('modal-import-preview')?.classList.add('open');
+      // also show preview stats in modal for consistency
       toast(`Imported ${rows.length} (${expense} expense / ${income} income)${skipped ? ` · ${skipped} skipped` : ''}`);
       e.target.value = '';
       await refreshAllData();
@@ -942,6 +1058,65 @@ function wireImportExport() {
       toast(err.message || 'GCash import failed');
       e.target.value = '';
     }
+  });
+
+  // Confirm import button
+  document.getElementById('import-confirm-btn')?.addEventListener('click', async () => {
+    if (!pendingPreview) return;
+    const btn = document.getElementById('import-confirm-btn');
+    btn.disabled = true;
+    btn.textContent = 'Importing…';
+    try {
+      const skipDup = document.getElementById('import-skip-duplicates')?.checked;
+      const dupSet = pendingPreview.dupIdxSet;
+      const toInsert = pendingPreview.validated.filter(v=> v.valid && !(skipDup && dupSet.has(v.idx))).map(v=> v.normalized);
+      if (!toInsert.length) { toast('No rows to import after filtering'); return; }
+      const cats = new Map(getCategories().map((c) => [c.name.toLowerCase(), c]));
+      const payload = toInsert.map(r=> ({
+        type: r.type,
+        amount: Math.abs(Number(r.amount)),
+        category_id: r.categoryName ? (cats.get(String(r.categoryName).toLowerCase())?.id ?? null) : null,
+        payment_method: r.payment_method,
+        description: r.description,
+        notes: r.notes,
+        occurred_on: r.occurred_on,
+        source: 'import',
+      }));
+      const inserted = await bulkAddTransactions(currentUser.id, payload);
+      localStorage.setItem(`nimbus_last_import_${currentUser.id}`, JSON.stringify(inserted.map(x=>x.id)));
+      document.getElementById('import-summary-text') && (document.getElementById('import-summary-text').textContent = `${inserted.length} transactions — ${pendingPreview.stats.income} income / ${pendingPreview.stats.expense} expense. Invalid ${pendingPreview.stats.invalid}, duplicates ${skipDup? 'skipped' : 'included'}.`);
+      const undoEl = document.getElementById('import-undo');
+      if (undoEl) undoEl.style.display='block';
+      toast(`Imported ${inserted.length} transactions`);
+      await refreshAllData();
+      renderAll();
+    } catch (err) {
+      toast(err.message || 'Import failed');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Confirm Import';
+    }
+  });
+
+  document.getElementById('import-skip-duplicates')?.addEventListener('change', ()=>{
+    if (pendingPreview) renderImportPreview(pendingPreview);
+  });
+
+  document.getElementById('import-undo-btn')?.addEventListener('click', async ()=>{
+    if (!confirm('Undo last import? This will delete the recently imported transactions.')) return;
+    try{
+      const key = `nimbus_last_import_${currentUser?.id || ''}`;
+      const ids = JSON.parse(localStorage.getItem(key) || localStorage.getItem('nimbus_last_import')||'[]');
+      if (!ids.length) { toast('No import to undo'); return; }
+      await deleteTransactionsByIds(ids);
+      localStorage.removeItem(key);
+      localStorage.removeItem('nimbus_last_import');
+      document.getElementById('import-undo').style.display='none';
+      document.getElementById('modal-import-preview')?.classList.remove('open');
+      toast(`Undid ${ids.length} imported transactions`);
+      await refreshAllData();
+      renderAll();
+    } catch(err){ toast(err.message || 'Undo failed'); }
   });
 }
 

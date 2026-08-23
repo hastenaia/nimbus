@@ -60,13 +60,27 @@ export async function addTransaction(userId, payload) {
   return data;
 }
 
-/** Batch-insert many transactions in a single request (used by CSV/Excel/JSON import). */
+/** Batch-insert many transactions in a safe batched strategy (respects RLS, avoids large payload). */
 export async function bulkAddTransactions(userId, rows) {
   const supabase = getSupabase();
   const payload = rows.map((r) => ({ user_id: userId, ...r }));
-  const { data, error } = await supabase.from('transactions').insert(payload).select();
+  const BATCH = 500;
+  let all = [];
+  for (let i = 0; i < payload.length; i += BATCH) {
+    const chunk = payload.slice(i, i + BATCH);
+    const { data, error } = await supabase.from('transactions').insert(chunk).select();
+    if (error) throw error;
+    if (data) all = all.concat(data);
+  }
+  return all;
+}
+
+export async function deleteTransactionsByIds(ids) {
+  if (!ids || !ids.length) return 0;
+  const supabase = getSupabase();
+  const { error, count } = await supabase.from('transactions').delete().in('id', ids);
   if (error) throw error;
-  return data || [];
+  return count || ids.length;
 }
 
 export async function updateTransaction(id, payload) {

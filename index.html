@@ -447,6 +447,31 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="modal-import-preview">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-head"><h3>Import Preview</h3><button class="icon-btn" data-close-modal>✕</button></div>
+    <div id="import-preview-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;"></div>
+    <div id="import-mapping" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;"></div>
+    <div id="import-preview-errors" style="max-height:120px;overflow:auto;margin-bottom:8px;font-size:12px;color:var(--coral);"></div>
+    <div style="max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:12px;">
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+        <thead><tr id="import-preview-head" style="background:var(--surface-solid);position:sticky;top:0;"></tr></thead>
+        <tbody id="import-preview-body"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <label style="display:flex;gap:6px;align-items:center;font-size:12.5px;"><input type="checkbox" id="import-skip-duplicates" checked style="width:auto;" /> Skip duplicate candidates (<span id="dup-count">0</span>)</label>
+      <span style="flex:1;"></span>
+      <button class="btn btn-ghost btn-sm" data-close-modal>Cancel</button>
+      <button class="btn btn-primary btn-sm" id="import-confirm-btn" disabled>Confirm Import</button>
+    </div>
+    <div id="import-undo" style="display:none;margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--surface-solid);">
+      <div style="font-size:12.5px;color:var(--text-dim);">Import complete: <span id="import-summary-text"></span></div>
+      <button class="btn btn-ghost btn-sm" id="import-undo-btn" style="margin-top:8px;">Undo last import</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ CDN LIBS ============ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
